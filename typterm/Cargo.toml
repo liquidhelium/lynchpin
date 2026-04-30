@@ -1,0 +1,13 @@
+[package]
+name = "typterm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+typst = { workspace = true }
+unicode-width = "0.2"
+unicode-segmentation = "1.11"
+
+[dev-dependencies]
+tinymist-world = { workspace = true , features = ["system", "fonts"]}
+clap = "4.5"

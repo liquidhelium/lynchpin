@@ -1,0 +1,6 @@
+[workspace]
+members = ["typterm"]
+resolver = "3"
+[workspace.dependencies]
+typst = "0.14"
+tinymist-world = "0.14.6"
