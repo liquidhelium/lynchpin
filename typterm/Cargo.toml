@@ -7,6 +7,8 @@ edition = "2024"
 typst = { workspace = true }
 unicode-width = "0.2"
 unicode-segmentation = "1.11"
+crossterm = "0.29"
+comemo = "0.5"
 
 [dev-dependencies]
 tinymist-world = { workspace = true , features = ["system", "fonts"]}
