@@ -7,10 +7,7 @@ use typst::{
     engine::Engine,
     foundations::{Content, SequenceElem, Smart, StyleChain, StyledElem},
     layout::{BlockBody, BlockElem, BoxElem, HElem, PagebreakElem, VElem},
-    model::{
-        EmphElem, EnumElem, HeadingElem, LinkElem, ListElem, ParElem,
-        ParbreakElem, QuoteElem, StrongElem, TermsElem,
-    },
+    model::{EmphElem, EnumElem, HeadingElem, LinkElem, ListElem, ParElem, ParbreakElem, QuoteElem, StrongElem, TermsElem},
     routines::Pair,
     syntax::Span,
     text::{
@@ -28,6 +25,8 @@ use typst::{
 /// - Inline content is already grouped in `ParElem`.
 /// - Lists/enums/terms are `ListElem`/`EnumElem`/`TermsElem` with children.
 /// - `HeadingElem` appears directly (not wrapped in `BlockElem`).
+/// - `StrongElem`/`EmphElem` have been rewritten to styled body content by
+///   `realize_term`; they never appear here.
 pub fn convert_to_nodes<'a>(
     engine: &mut Engine,
     children: impl IntoIterator<Item = Pair<'a>>,
@@ -80,11 +79,12 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
         if styles.get(TextElem::emph).0 {
             style.attributes.set(Attribute::Italic);
         }
-        // With our terminal realize, UnderlineElem/StrikeElem/OverlineElem/
-        // HighlightElem are NOT converted to TextElem::deco (that only happens
-        // in paged realize). They are handled directly as elements below.
-        // We still check deco here for cases where content went through another
-        // realize pass (e.g. inside a user show rule).
+        // `TextElem::deco` is set by the paged built-in show rules for
+        // UnderlineElem/StrikeElem/OverlineElem/HighlightElem. In our pipeline
+        // those elements are NOT rewritten via show rules (deco construction is
+        // too verbose); they are handled as explicit branches further below.
+        // We still check deco here to cover content that arrived through a user
+        // show rule that went through the paged path (e.g. inside a `context`).
         for deco in styles.get_cloned(TextElem::deco).iter() {
             match &deco.line {
                 DecoLine::Underline { .. } => {
@@ -101,8 +101,9 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
                 }
             }
         }
-        // Link highlighting (set via StyleChain by LinkElem's show rule or
-        // our direct LinkElem handler below).
+        // Link styling: set via StyleChain when `LinkElem::current` is present.
+        // This is populated by our direct `LinkElem` handler below, which sets
+        // the style on the body before recursing.
         if styles.get_cloned(LinkElem::current).is_some() {
             style.attributes.set(Attribute::Underlined);
             style.foreground_color = Some(Color::Cyan);
@@ -160,6 +161,14 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
         );
 
     // ── Inline styling ────────────────────────────────────────────────────────
+    // `StrongElem` and `EmphElem` are handled at realization time by
+    // `realize.rs::visit_term_rules` for top-level document content: they are
+    // rewritten to their body with `TextElem::delta`/`TextElem::emph` set, so
+    // the `TextElem` branch above picks up the styling via the StyleChain.
+    //
+    // However, bodies of other elements (ListItem, UnderlineElem, BoxElem, …)
+    // are NOT revisited by the realization pass, so `StrongElem`/`EmphElem` can
+    // still appear here when nested. The branches below handle that fallback.
     } else if let Some(elem) = child.to_packed::<StrongElem>() {
         cv.with_style(
             |s| s.attributes.set(Attribute::Bold),
@@ -341,7 +350,12 @@ fn render_enum_item(
             cv.enum_counter += 1;
             n
         }
-        Smart::Custom(n) => n,
+        Smart::Custom(n) => {
+            // Explicit number: advance the counter past this item so that the
+            // next Auto-numbered item follows on from here.
+            cv.enum_counter = n + 1;
+            n
+        }
     };
     cv.push_text(format!("{}. ", n), span);
     handle(cv, body, styles)?;
@@ -378,14 +392,14 @@ fn heading_color(level: usize) -> Color {
     }
 }
 
-// ── Converter struct ──────────────────────────────────────────────────────────
+// ── Converter struct ────────────────────────────────────────────────────────
 
-pub struct Converter<'a, 'b> {
-    pub engine: &'a mut Engine<'b>,
-    pub output: EcoVec<TermElement>,
-    pub current_style: ContentStyle,
+struct Converter<'a, 'b> {
+    engine: &'a mut Engine<'b>,
+    output: EcoVec<TermElement>,
+    current_style: ContentStyle,
     /// Current enumeration counter (reset at the start of each `EnumElem`).
-    pub enum_counter: u64,
+    enum_counter: u64,
 }
 
 impl Converter<'_, '_> {

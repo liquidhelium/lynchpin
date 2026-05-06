@@ -4,8 +4,10 @@
 //! - Single realization kind (no paged / HTML / math modes).
 //! - No introspection tag generation.
 //! - No TEXTUAL grouping (regex show rules) or CITES grouping.
-//! - Built-in show rules are **not** applied (no paged/HTML transformations).
-//!   Only user-defined show rules (`show heading: ...`) fire.
+//! Built-in show rules are **not** applied for structural elements (no paged/HTML
+//!   transformations). However, a small set of "term built-in rules" *are* applied
+//!   for simple inline-styling wrappers (`strong`, `emph`) that reduce cleanly to
+//!   TextElem style-chain fields already read by `convert.rs`.
 //! - Space collapsing is included (required for correct PAR grouping).
 
 use std::borrow::Cow;
@@ -23,14 +25,15 @@ use typst::introspection::TagElem;
 use typst::layout::{AlignElem, BoxElem, HElem, InlineElem, VElem};
 use typst::math::{EquationElem, Mathy};
 use typst::model::{
-    DocumentInfo, EnumElem, ListElem, ListItemLike, ListLike,
-    ParElem, ParbreakElem, TermsElem,
+    DocumentInfo, EmphElem, EnumElem, ListElem, ListItemLike, ListLike, ParElem,
+    ParbreakElem, StrongElem, TermsElem,
 };
 use typst::routines::{Arenas, Pair};
-use typst::text::{LinebreakElem, SmartQuoteElem, SpaceElem, TextElem};
-use typst::text::{HighlightElem, OverlineElem, RawElem, StrikeElem, SubElem, SuperElem, UnderlineElem};
-use typst::utils::SliceExt;
 use typst::syntax::Span;
+use typst::text::{HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem,
+    SmartQuoteElem, SpaceElem, StrikeElem, SubElem, SuperElem, TextElem, UnderlineElem,
+    WeightDelta};
+use typst::utils::SliceExt;
 
 // ── Public entry ─────────────────────────────────────────────────────────────
 
@@ -56,7 +59,6 @@ pub fn realize_term<'a>(
         sink: vec![],
         groupings: ArrayVec::new(),
         may_attach: false,
-        saw_parbreak: false,
     };
 
     visit(&mut s, content, styles)?;
@@ -84,8 +86,7 @@ struct State<'a, 'x, 'y> {
     groupings: ArrayVec<Grouping<'x>, MAX_GROUP_NESTING>,
     /// Whether "attach" spacing following the last element can survive.
     may_attach: bool,
-    /// Whether any `ParbreakElem` was encountered (used by finish logic).
-    saw_parbreak: bool,
+    // (no saw_parbreak: it was set but never read — removed)
 }
 
 impl<'a> State<'a, '_, '_> {
@@ -204,6 +205,15 @@ fn visit<'a>(
     if let Some(sym) = content.to_packed::<typst::foundations::SymbolElem>() {
         let text = TextElem::packed(sym.text.clone()).spanned(sym.span());
         visit(s, s.store(text), styles)?;
+        return Ok(());
+    }
+
+    // Apply built-in terminal show rules for simple inline-styling elements.
+    // These rules mirror what the paged target does: transform the element into
+    // its body with the relevant TextElem style field set, so that `convert.rs`
+    // only needs to handle `TextElem` for styling (it already reads `delta` and
+    // `emph` from the StyleChain).  User show rules fired above take priority.
+    if visit_term_rules(s, content, styles)? {
         return Ok(());
     }
 
@@ -463,7 +473,6 @@ fn visit_filter_rules<'a>(
     }
     if content.is::<ParbreakElem>() {
         s.may_attach = false;
-        s.saw_parbreak = true;
         return Ok(true);
     }
     // Suppress "attach" spacing unless immediately following a paragraph.
@@ -476,6 +485,45 @@ fn visit_filter_rules<'a>(
     }
 
     s.may_attach = content.is::<ParElem>();
+    Ok(false)
+}
+
+// ── Built-in terminal show rules ──────────────────────────────────────────────
+
+/// Applies built-in show rules for inline-styling elements whose only effect is
+/// to push a style field onto the `TextElem` StyleChain.
+///
+/// Returns `true` if the element was handled (the caller should return early).
+///
+/// Why only `strong` and `emph`?
+/// - `strong` → sets `TextElem::delta` (weight delta). `convert.rs::TextElem`
+///   already reads `styles.get(TextElem::delta)` and sets `Attribute::Bold`.
+/// - `emph` → sets `TextElem::emph`. `convert.rs::TextElem` already reads
+///   `styles.get(TextElem::emph)` and sets `Attribute::Italic`.
+/// - Deco elements (`underline`, `strike`, `overline`, `highlight`) would need
+///   `Decoration` + `SmallVec` construction — complex with no reduction in code.
+///   They stay in `convert.rs` where the terminal styling is one clear branch.
+/// - `sub`/`super` use custom dim-color logic (no standard typst style field).
+/// - `link` requires destination resolution; stays in `convert.rs`.
+fn visit_term_rules<'a>(
+    s: &mut State<'a, '_, '_>,
+    content: &'a Content,
+    styles: StyleChain<'a>,
+) -> SourceResult<bool> {
+    if let Some(elem) = content.to_packed::<StrongElem>() {
+        let delta = elem.delta.get(styles);
+        let body = s.store(elem.body.clone().set(TextElem::delta, WeightDelta(delta)));
+        visit(s, body, styles)?;
+        return Ok(true);
+    }
+
+    if let Some(elem) = content.to_packed::<EmphElem>() {
+        // EmphElem toggles italic; `ItalicToggle` XORs with the current state.
+        let body = s.store(elem.body.clone().set(TextElem::emph, ItalicToggle(true)));
+        visit(s, body, styles)?;
+        return Ok(true);
+    }
+
     Ok(false)
 }
 
