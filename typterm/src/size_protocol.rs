@@ -93,11 +93,11 @@ impl EncodeParams {
         }
         Ok(())
     }
-    pub fn with_match_length(&self, len: usize) -> Self {
+    pub fn with_match_length(&self, str: &str) -> Self {
         let scale = self.scale.unwrap_or(1) as usize;
         let n = self.numerator.unwrap_or(1) as usize;
         let d = self.denominator.unwrap_or(1) as usize;
-        let w = (len * scale * n).div_ceil(d);
+        let w = (UnicodeWidthStr::width(str) * scale * n).div_ceil(d);
         let mut clone = self.clone();
         clone.width = Some(w as u8);
         clone
@@ -137,7 +137,10 @@ impl core::fmt::Display for ProtocolError {
                 "denominator must be > numerator when non-zero, got n={numerator}, d={denominator}"
             ),
             ProtocolError::TextTooLong { len, max } => {
-                write!(f, "text exceeds MAX_TEXT_LENGTH ({max} bytes), got {len} bytes")
+                write!(
+                    f,
+                    "text exceeds MAX_TEXT_LENGTH ({max} bytes), got {len} bytes"
+                )
             }
         }
     }
@@ -267,11 +270,29 @@ impl KittyTextSizingEncoder {
         KittyTextSizingBuilder::new(text)
     }
 
-    /// Build a text sizing escape sequence (unchecked parameter ranges).
+    /// Build a text sizing escape sequence, automatically splitting into multiple segments
+    /// when `params.width > 7` (the 3-bit protocol maximum).
+    ///
+    /// When the width fits in one segment (≤ 7), a single escape sequence is returned.
+    /// When the width exceeds 7, `split_segments` partitions the text into consecutive
+    /// chunks whose individual widths are each ≤ 7, and all segments are concatenated.
     ///
     /// Format: <OSC> _text_size_code ; metadata ; text <terminator>
     /// Example: \x1b]_text_size_code;s=2;Double sized text\x07
     pub fn encode(&self, text: &str, params: EncodeParams) -> String {
+        if params.width.unwrap_or(0) > 7 {
+            return self
+                .split_segments(text, &params)
+                .into_iter()
+                .map(|(seg_text, seg_params)| self.encode_one(&seg_text, seg_params))
+                .collect();
+        }
+        self.encode_one(text, params)
+    }
+
+    /// Single-segment encoder. Does **not** split, even when `params.width > 7`.
+    /// Prefer `encode` for general use.
+    fn encode_one(&self, text: &str, params: EncodeParams) -> String {
         let metadata = self.build_metadata(
             params.scale,
             params.width,
@@ -296,8 +317,73 @@ impl KittyTextSizingEncoder {
         )
     }
 
+    /// Split `text` into protocol-compatible segments where each segment's `width ≤ 7`.
+    ///
+    /// When `params.width ≤ 7` (or is absent), a single-element vec with the original
+    /// params is returned immediately.
+    ///
+    /// Otherwise the text is walked grapheme-by-grapheme. The effective cell contribution
+    /// of each grapheme is:
+    ///
+    /// ```text
+    /// effective = ceil(unicode_width * scale * n / d)
+    /// ```
+    ///
+    /// where `n` / `d` are the numerator / denominator (defaulting to 1/1 when absent or
+    /// zero, i.e. no fractional adjustment). A new segment is started whenever adding the
+    /// next grapheme would push the running width above 7.
+    pub fn split_segments(&self, text: &str, params: &EncodeParams) -> Vec<(String, EncodeParams)> {
+        let total_w = params.width.unwrap_or(0) as usize;
+        if total_w <= 7 {
+            return vec![(text.to_string(), params.clone())];
+        }
+
+        let scale = params.scale.unwrap_or(1) as usize;
+        // Mirror the defaulting logic in `with_match_length`:
+        // absent or zero n/d → treat as 1/1 (no fractional scaling).
+        let (n, d) = match (params.numerator, params.denominator) {
+            (Some(n), Some(d)) if n > 0 && d > 0 => (n as usize, d as usize),
+            _ => (1, 1),
+        };
+
+        let effective = |gw| -> f32 { (gw * scale as f32 * n as f32) / (d as f32) };
+
+        let mut segments: Vec<(String, EncodeParams)> = Vec::new();
+        let mut seg_text = String::new();
+        let mut seg_w = 0.0;
+
+        for g in UnicodeSegmentation::graphemes(text, true) {
+            let gw = UnicodeWidthStr::width(g) as f32/ scale as f32;
+            let ew = effective(gw);
+
+            // Flush the current segment before it would exceed the 3-bit limit.
+            if !seg_text.is_empty() && seg_w + ew >= 7.0  {
+                let mut p = params.clone();
+                p.width = Some((seg_w).ceil() as u8);
+                segments.push((seg_text.clone(), p));
+                seg_text.clear();
+                seg_w = 0.0;
+            }
+
+            seg_text.push_str(g);
+            seg_w += ew;
+        }
+
+        if !seg_text.is_empty() {
+            let mut p = params.clone();
+            p.width = Some(seg_w.ceil() as u8);
+            segments.push((seg_text, p));
+        }
+
+        segments
+    }
+
     /// Checked encoder variant with protocol validation.
-    pub fn encode_checked(&self, text: &str, params: EncodeParams) -> Result<String, ProtocolError> {
+    pub fn encode_checked(
+        &self,
+        text: &str,
+        params: EncodeParams,
+    ) -> Result<String, ProtocolError> {
         params.validate()?;
         if text.len() > Self::MAX_TEXT_LENGTH {
             return Err(ProtocolError::TextTooLong {

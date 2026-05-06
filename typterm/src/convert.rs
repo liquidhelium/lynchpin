@@ -317,7 +317,7 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             sizing: cv
                 .current_sizing
                 .as_ref()
-                .map(|s| s.with_match_length(text.len()))
+                .map(|s| s.with_match_length(text.as_str()))
                 .clone(),
         };
         cv.push(TermElement::Text(TermText {
@@ -625,7 +625,7 @@ impl Converter<'_, '_> {
             sizing: self
                 .current_sizing
                 .as_ref()
-                .map(|s| s.with_match_length(text.len()))
+                .map(|s| s.with_match_length(text.as_str()))
                 .clone(),
         };
         self.output
