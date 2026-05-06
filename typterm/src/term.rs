@@ -24,7 +24,7 @@ use typst::{
     syntax::Span,
 };
 
-use crate::term::style::TermStyle;
+use crate::{size_protocol::EncodeParams, term::style::TermStyle};
 
 #[derive(Debug, Clone)]
 pub struct TermDocument {
@@ -38,10 +38,16 @@ impl fmt::Display for TermDocument {
         for element in &self.flow {
             match element {
                 TermElement::Text(text) => {
-                    let styled = StyledContent::new(
-                        text.style.style,
-                        text.text.as_str(),
-                    );
+                    let raw = text.text.as_str();
+                    // Apply Kitty Text Sizing when sizing is set and text has no newlines.
+                    // Newlines are always emitted raw to avoid corrupting line advancement.
+                    let display: String = if let Some(ref sizing) = text.style.sizing {
+                        crate::size_protocol::KittyTextSizingEncoder::new()
+                            .encode(raw, sizing.clone())
+                    } else {
+                        raw.to_owned()
+                    };
+                    let styled = StyledContent::new(text.style.style, display.as_str());
                     write!(f, "{styled}")?;
                 }
                 // Frames are skipped as per design
@@ -89,7 +95,26 @@ impl TermElement {
         TermElement::Text(TermText {
             text: text.into(),
             span,
-            style: TermStyle { style, sizing: None },
+            style: TermStyle {
+                style,
+                sizing: None,
+            },
+        })
+    }
+    /// Create a styled text element.
+    pub fn text_with_style_and_size(
+        text: impl Into<EcoString>,
+        span: Span,
+        style: ContentStyle,
+        sizing: EncodeParams,
+    ) -> TermElement {
+        TermElement::Text(TermText {
+            text: text.into(),
+            span,
+            style: TermStyle {
+                style,
+                sizing: Some(sizing),
+            },
         })
     }
 }

@@ -69,11 +69,11 @@ impl EncodeParams {
                 return Err(ProtocolError::InvalidScale(s));
             }
         }
-        if let Some(w) = self.width {
-            if w > 7 {
-                return Err(ProtocolError::InvalidWidth(w));
-            }
-        }
+        // if let Some(w) = self.width {
+        //     if w > 7 {
+        //         return Err(ProtocolError::InvalidWidth(w));
+        //     }
+        // }
         if let Some(n) = self.numerator {
             if n > 15 {
                 return Err(ProtocolError::InvalidNumerator(n));
@@ -92,6 +92,15 @@ impl EncodeParams {
             }
         }
         Ok(())
+    }
+    pub fn with_match_length(&self, len: usize) -> Self {
+        let scale = self.scale.unwrap_or(1) as usize;
+        let n = self.numerator.unwrap_or(1) as usize;
+        let d = self.denominator.unwrap_or(1) as usize;
+        let w = (len * scale * n).div_ceil(d);
+        let mut clone = self.clone();
+        clone.width = Some(w as u8);
+        clone
     }
 }
 
@@ -238,7 +247,7 @@ impl KittyTextSizingBuilder {
 
 impl KittyTextSizingEncoder {
     /// Text size code identifier
-    pub const TEXT_SIZE_CODE: &'static str = "_text_size_code";
+    pub const TEXT_SIZE_CODE: &'static str = "66";
 
     /// BEL terminator
     pub const BEL_TERMINATOR: &'static str = "\u{0007}";
@@ -329,8 +338,7 @@ impl KittyTextSizingEncoder {
             }
         }
         if let Some(denominator) = denominator {
-            let num = numerator.unwrap_or(0);
-            if denominator <= 15 && (denominator == 0 || denominator > num) {
+            if denominator <= 15 {
                 parts.push(format!("d={denominator}"));
             }
         }

@@ -1,3 +1,6 @@
+use std::{u8, u32};
+
+use crate::size_protocol::{EncodeParams, KittyVerticalAlignment};
 use crate::term::{TermElement, TermText, style::TermStyle};
 use crossterm::style::{Attribute, Color, ContentStyle};
 use typst::{
@@ -34,6 +37,7 @@ pub fn convert_to_nodes<'a>(
         engine,
         output: EcoVec::new(),
         current_style: ContentStyle::default(),
+        current_sizing: None,
         pending_heading: None,
         pending_first_item: None,
         enum_counter: 1,
@@ -123,18 +127,19 @@ fn handle_top(
                 let next_is_parent = next
                     .and_then(|n| n.to_packed::<TagElem>())
                     .and_then(|t| {
-                        if let Tag::Start(o, _) = &t.tag { Some(o) } else { None }
+                        if let Tag::Start(o, _) = &t.tag {
+                            Some(o)
+                        } else {
+                            None
+                        }
                     })
-                    .map(|o| {
-                        o.is::<ListElem>() || o.is::<EnumElem>() || o.is::<TermsElem>()
-                    })
+                    .map(|o| o.is::<ListElem>() || o.is::<EnumElem>() || o.is::<TermsElem>())
                     .unwrap_or(false);
 
                 if next_is_parent {
                     // 第一项：缓冲，等待父 tag 触发渲染
                     if let Some(item) = orig.to_packed::<ListItem>() {
-                        cv.pending_first_item =
-                            Some(PendingItem::List(item.body.clone()));
+                        cv.pending_first_item = Some(PendingItem::List(item.body.clone()));
                     } else if let Some(item) = orig.to_packed::<EnumItem>() {
                         cv.pending_first_item = Some(PendingItem::Enum(
                             item.number.get(styles),
@@ -153,7 +158,13 @@ fn handle_top(
                 if let Some(item) = orig.to_packed::<ListItem>() {
                     render_list_item(cv, &item.body, child.span(), styles)?;
                 } else if let Some(item) = orig.to_packed::<EnumItem>() {
-                    render_enum_item(cv, item.number.get(styles), &item.body, child.span(), styles)?;
+                    render_enum_item(
+                        cv,
+                        item.number.get(styles),
+                        &item.body,
+                        child.span(),
+                        styles,
+                    )?;
                 } else if let Some(item) = orig.to_packed::<TermItem>() {
                     render_term_item(cv, &item.term, &item.description, child.span(), styles)?;
                 }
@@ -255,7 +266,7 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
     } else if child.is::<TagElem>() {
         // 已在 handle_top 处理，此处不重复输出
 
-    // ── 空白 / 换行 ────────────────────────────────────────────────────────
+        // ── 空白 / 换行 ────────────────────────────────────────────────────────
     } else if child.is::<SpaceElem>() {
         cv.push_text(' ', child.span());
     } else if child.is::<LinebreakElem>() {
@@ -301,7 +312,19 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             style.attributes.set(Attribute::Underlined);
             style.foreground_color = Some(Color::Cyan);
         }
-        cv.push(TermElement::text_with_style(text, child.span(), style));
+        let style = TermStyle {
+            style,
+            sizing: cv
+                .current_sizing
+                .as_ref()
+                .map(|s| s.with_match_length(text.len()))
+                .clone(),
+        };
+        cv.push(TermElement::Text(TermText {
+            text,
+            span: child.span(),
+            style,
+        }));
 
     // ── 段落 ───────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<ParElem>() {
@@ -353,9 +376,31 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             styles,
         )?;
     } else if let Some(elem) = child.to_packed::<SubElem>() {
-        handle(cv, &elem.body, styles)?;
+        // 下标：半高 (n=1/d=2)，底部对齐
+        cv.with_sizing(
+            Some(EncodeParams {
+                numerator: Some(1),
+                denominator: Some(2),
+                vertical_alignment: Some(KittyVerticalAlignment::Bottom),
+                use_bel_terminator: true,
+                ..Default::default()
+            }),
+            |cv, st| handle(cv, &elem.body, st),
+            styles,
+        )?;
     } else if let Some(elem) = child.to_packed::<SuperElem>() {
-        handle(cv, &elem.body, styles)?;
+        // 上标：半高 (n=1/d=2)，顶部对齐
+        cv.with_sizing(
+            Some(EncodeParams {
+                numerator: Some(1),
+                denominator: Some(2),
+                vertical_alignment: Some(KittyVerticalAlignment::Top),
+                use_bel_terminator: true,
+                ..Default::default()
+            }),
+            |cv, st| handle(cv, &elem.body, st),
+            styles,
+        )?;
 
     // ── 标题（realize 前出现时仍处理）─────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<HeadingElem>() {
@@ -367,10 +412,28 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
                 s.attributes.set(Attribute::Bold);
                 s.foreground_color = Some(heading_color(level));
             },
-            |cv, st| handle(cv, &elem.body, st),
+            |cv, st| {
+                cv.with_sizing(
+                    heading_sizing(level)
+                        .map(|(n, d)| to_triple(n, d))
+                        .map(|(s, n, d)| EncodeParams {
+                            scale: Some(s),
+                            numerator: Some(n),
+                            denominator: Some(d),
+                            ..Default::default()
+                        }),
+                    |cv, st| handle(cv, &elem.body, st),
+                    st,
+                )
+            },
             styles,
         )?;
-        cv.push_text('\n', span);
+        cv.push_text(
+            std::iter::repeat('\n')
+                .take(heading_sizing(level).map(|(n, d)| (n / d) + 1).unwrap_or(1) as usize)
+                .collect::<EcoString>(),
+            span,
+        );
 
     // ── 链接 ───────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<LinkElem>() {
@@ -456,10 +519,28 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
                         s.attributes.set(Attribute::Bold);
                         s.foreground_color = Some(heading_color(level));
                     },
-                    |cv, st| handle(cv, body, st),
+                    |cv, st| {
+                        cv.with_sizing(
+                            heading_sizing(level)
+                                .map(|(n, d)| to_triple(n, d))
+                                .map(|(s, n, d)| EncodeParams {
+                                    scale: Some(s),
+                                    numerator: Some(n),
+                                    denominator: Some(d),
+                                    ..Default::default()
+                                }),
+                            |cv, st| handle(cv, body, st),
+                            st,
+                        )
+                    },
                     styles,
                 )?;
-                cv.push_text('\n', span);
+                cv.push_text(
+                    std::iter::repeat('\n')
+                        .take(heading_sizing(level).map(|(n, d)| (n / d)).unwrap_or(1) as usize)
+                        .collect::<EcoString>(),
+                    span,
+                );
             }
         } else if let Some(BlockBody::Content(body)) = elem.body.get_ref(styles) {
             // 普通内容块
@@ -469,7 +550,7 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
         // MultiLayouter / SingleLayouter（列表/枚举/术语块）：静默跳过
         // 它们的内容已通过 TagElem 渲染
 
-    // ── 间距 ───────────────────────────────────────────────────────────────
+        // ── 间距 ───────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<HElem>() {
         if !elem.amount.is_zero() {
             cv.push_text(' ', child.span());
@@ -501,6 +582,17 @@ fn heading_color(level: usize) -> Color {
     }
 }
 
+/// Returns Kitty sizing for a heading level.
+/// H1/H2 use scale=2 (double height); deeper levels get no extra scaling.
+fn heading_sizing(level: usize) -> Option<(u8, u8)> {
+    match level {
+        1 => Some((2, 1)),
+        2 => Some((3, 2)),
+        3 => Some((4, 3)),
+        _ => None,
+    }
+}
+
 // ── Converter 结构体 ────────────────────────────────────────────────────────
 
 /// 缓冲的第一个列表/枚举/术语项（出现在父元素 tag 之前）
@@ -515,6 +607,8 @@ pub struct Converter<'a, 'b> {
     pub engine: &'a mut Engine<'b>,
     pub output: EcoVec<TermElement>,
     pub current_style: ContentStyle,
+    /// 当前字号参数；由 with_sizing 设置，push_text 消费
+    pub current_sizing: Option<EncodeParams>,
     /// 来自 Tag::Start(HeadingElem) 的级别；由下一个 BlockElem 消费
     pending_heading: Option<usize>,
     /// 第一个列表/枚举/术语项（等待父 tag 以确定计数器起始值）
@@ -525,14 +619,17 @@ pub struct Converter<'a, 'b> {
 
 impl Converter<'_, '_> {
     fn push_text(&mut self, text: impl Into<EcoString>, span: Span) {
-        self.output.push(TermElement::Text(TermText {
-            text: text.into(),
-            span,
-            style: TermStyle {
-                style: self.current_style,
-                sizing: None,
-            },
-        }));
+        let text = text.into();
+        let style = TermStyle {
+            style: self.current_style,
+            sizing: self
+                .current_sizing
+                .as_ref()
+                .map(|s| s.with_match_length(text.len()))
+                .clone(),
+        };
+        self.output
+            .push(TermElement::Text(TermText { text, span, style }));
     }
 
     fn push(&mut self, elem: impl Into<TermElement>) {
@@ -559,4 +656,50 @@ impl Converter<'_, '_> {
         self.current_style = saved;
         result
     }
+
+    /// 临时设置 Kitty 字号参数，执行闭包，然后恢复。
+    fn with_sizing<F>(
+        &mut self,
+        sizing: Option<EncodeParams>,
+        f: F,
+        styles: StyleChain,
+    ) -> SourceResult<()>
+    where
+        F: FnOnce(&mut Converter, StyleChain) -> SourceResult<()>,
+    {
+        let saved = self.current_sizing.clone();
+        self.current_sizing = sizing;
+        let result = f(self, styles);
+        self.current_sizing = saved;
+        result
+    }
+}
+
+fn to_triple(n: u8, d: u8) -> (u8, u8, u8) {
+    let base = n.div_ceil(d);
+    // find a m/p * base = n/d, where all vars are u8.
+    // that is, m d base = n p = lcm(d base, n).
+    let lcm = lcm(d as u32 * base as u32, n as u32).unwrap_or(u32::MAX);
+    let m = lcm / (d as u32 * base as u32);
+    let p = lcm / (n as u32);
+    (base, m as u8, p as u8)
+}
+
+pub fn gcd(a: u32, b: u32) -> Option<u32> {
+    let (mut a, mut b) = (a, b);
+    while b != 0 {
+        let temp = b;
+        b = a.checked_rem(b)?;
+        a = temp;
+    }
+
+    Some(a)
+}
+
+pub fn lcm(a: u32, b: u32) -> Option<u32> {
+    if a == b {
+        return Some(a);
+    }
+
+    a.checked_div(gcd(a, b)?).and_then(|gcd| gcd.checked_mul(b))
 }
