@@ -6,34 +6,241 @@ use typst::{
     ecow::{EcoString, EcoVec},
     engine::Engine,
     foundations::{Content, SequenceElem, Smart, StyleChain, StyledElem},
-    introspection::SplitLocator,
+    introspection::{SplitLocator, Tag, TagElem},
     layout::{BlockBody, BlockElem, BoxElem, HElem, PagebreakElem, VElem},
-    model::
-        {EmphElem, EnumElem, HeadingElem, LinkElem, ListElem, ParElem, ParbreakElem, QuoteElem,
-        StrongElem, TermsElem},
+    model::{
+        EmphElem, EnumElem, EnumItem, HeadingElem, LinkElem, ListElem, ListItem, ParElem,
+        ParbreakElem, QuoteElem, StrongElem, TermItem, TermsElem,
+    },
     routines::Pair,
     syntax::Span,
     text::{
-        DecoLine, HighlightElem, LinebreakElem, OverlineElem, RawContent, RawElem,
+        DecoLine, HighlightElem, LinebreakElem, OverlineElem, RawContent, RawElem, RawLine,
         SmartQuoteElem, SpaceElem, StrikeElem, SubElem, SuperElem, TextElem, UnderlineElem,
     },
 };
+
+// ── 公开入口 ────────────────────────────────────────────────────────────────
 
 pub fn convert_to_nodes<'a>(
     engine: &mut Engine,
     _locator: &mut SplitLocator,
     children: impl IntoIterator<Item = Pair<'a>>,
 ) -> SourceResult<EcoVec<TermElement>> {
-    let mut converter = Converter {
+    // 收集到 Vec 以便向前查看（lookahead）
+    let seq: Vec<Pair<'a>> = children.into_iter().collect();
+
+    let mut cv = Converter {
         engine,
         output: EcoVec::new(),
         current_style: ContentStyle::default(),
+        pending_heading: None,
+        pending_first_item: None,
+        enum_counter: 1,
     };
-    for (child, styles) in children {
-        handle(&mut converter, child, styles)?;
+
+    for (idx, &(child, styles)) in seq.iter().enumerate() {
+        let next = seq.get(idx + 1).map(|&(c, _)| c);
+        handle_top(&mut cv, child, styles, next)?;
     }
-    Ok(converter.finish())
+
+    Ok(cv.finish())
 }
+
+// ── 顶层处理器（含向前查看）────────────────────────────────────────────────
+//
+// 顶层序列是 realize 产生的扁平 (Content, StyleChain) 流。
+// 特殊点：列表/枚举/术语项的第一个 Tag::Start(item) 紧接在其
+// 父元素 Tag::Start(list/enum/terms) 前面，后续项排在父元素的
+// Tag::End 之后。因此需要向前查看一步来判断是否要缓冲第一项。
+
+fn handle_top(
+    cv: &mut Converter,
+    child: &Content,
+    styles: StyleChain,
+    next: Option<&Content>,
+) -> SourceResult<()> {
+    if let Some(tag_elem) = child.to_packed::<TagElem>() {
+        match &tag_elem.tag {
+            Tag::Start(orig, _) => {
+                // ── 标题：记录级别，由后续 BlockElem 消费 ──────────────────
+                if let Some(h) = orig.to_packed::<HeadingElem>() {
+                    cv.pending_heading = Some(h.resolve_level(styles).get() as usize);
+                    return Ok(());
+                }
+
+                // ── 列表 / 枚举 / 术语：父元素 tag，冲刷第一项缓冲 ────────
+                // 两种情况：
+                //   markup 语法（- item / + item / / term: desc）：
+                //     第一项已缓冲在 pending_first_item，后续项稍后以独立 T_start(item) 出现
+                //   函数调用语法（#list[...] / #enum(start:5)[...][...] / #terms[...]）：
+                //     无单独的 T_start(item)，需直接从元素的 children 渲染
+                if let Some(le) = orig.to_packed::<ListElem>() {
+                    if let Some(PendingItem::List(body)) = cv.pending_first_item.take() {
+                        render_list_item(cv, &body, child.span(), styles)?;
+                    } else {
+                        for item in &le.children {
+                            render_list_item(cv, &item.body, child.span(), styles)?;
+                        }
+                    }
+                    return Ok(());
+                }
+                if let Some(ee) = orig.to_packed::<EnumElem>() {
+                    cv.enum_counter = ee.start.get(styles).unwrap_or(1);
+                    if let Some(PendingItem::Enum(num, body)) = cv.pending_first_item.take() {
+                        render_enum_item(cv, num, &body, child.span(), styles)?;
+                    } else {
+                        for item in &ee.children {
+                            render_enum_item(
+                                cv,
+                                item.number.get(styles),
+                                &item.body,
+                                child.span(),
+                                styles,
+                            )?;
+                        }
+                    }
+                    return Ok(());
+                }
+                if let Some(te) = orig.to_packed::<TermsElem>() {
+                    if let Some(PendingItem::Term(term, desc)) = cv.pending_first_item.take() {
+                        render_term_item(cv, &term, &desc, child.span(), styles)?;
+                    } else {
+                        for item in &te.children {
+                            render_term_item(
+                                cv,
+                                &item.term,
+                                &item.description,
+                                child.span(),
+                                styles,
+                            )?;
+                        }
+                    }
+                    return Ok(());
+                }
+
+                // ── 列表项：判断是否为第一项（紧接父 tag）────────────────
+                let next_is_parent = next
+                    .and_then(|n| n.to_packed::<TagElem>())
+                    .and_then(|t| {
+                        if let Tag::Start(o, _) = &t.tag { Some(o) } else { None }
+                    })
+                    .map(|o| {
+                        o.is::<ListElem>() || o.is::<EnumElem>() || o.is::<TermsElem>()
+                    })
+                    .unwrap_or(false);
+
+                if next_is_parent {
+                    // 第一项：缓冲，等待父 tag 触发渲染
+                    if let Some(item) = orig.to_packed::<ListItem>() {
+                        cv.pending_first_item =
+                            Some(PendingItem::List(item.body.clone()));
+                    } else if let Some(item) = orig.to_packed::<EnumItem>() {
+                        cv.pending_first_item = Some(PendingItem::Enum(
+                            item.number.get(styles),
+                            item.body.clone(),
+                        ));
+                    } else if let Some(item) = orig.to_packed::<TermItem>() {
+                        cv.pending_first_item = Some(PendingItem::Term(
+                            item.term.clone(),
+                            item.description.clone(),
+                        ));
+                    }
+                    return Ok(());
+                }
+
+                // 后续项：直接渲染
+                if let Some(item) = orig.to_packed::<ListItem>() {
+                    render_list_item(cv, &item.body, child.span(), styles)?;
+                } else if let Some(item) = orig.to_packed::<EnumItem>() {
+                    render_enum_item(cv, item.number.get(styles), &item.body, child.span(), styles)?;
+                } else if let Some(item) = orig.to_packed::<TermItem>() {
+                    render_term_item(cv, &item.term, &item.description, child.span(), styles)?;
+                }
+                // 其他 Tag::Start（par、strong、link 等）：静默忽略
+            }
+            Tag::End(_, _, _) => {
+                // 结束 tag 无需处理
+            }
+        }
+        return Ok(());
+    }
+
+    // 非 tag 元素交给通用 handle
+    handle(cv, child, styles)
+}
+
+// ── 渲染辅助 ────────────────────────────────────────────────────────────────
+
+fn render_list_item(
+    cv: &mut Converter,
+    body: &Content,
+    span: Span,
+    styles: StyleChain,
+) -> SourceResult<()> {
+    cv.with_style(
+        |s| s.foreground_color = Some(Color::Cyan),
+        |cv, _| {
+            cv.push_text("• ", span);
+            Ok(())
+        },
+        styles,
+    )?;
+    handle(cv, body, styles)?;
+    cv.push_text('\n', span);
+    Ok(())
+}
+
+fn render_enum_item(
+    cv: &mut Converter,
+    num: Smart<u64>,
+    body: &Content,
+    span: Span,
+    styles: StyleChain,
+) -> SourceResult<()> {
+    let n = match num {
+        Smart::Custom(n) => {
+            cv.enum_counter = n + 1;
+            n
+        }
+        Smart::Auto => {
+            let n = cv.enum_counter;
+            cv.enum_counter += 1;
+            n
+        }
+    };
+    cv.with_style(
+        |s| s.foreground_color = Some(Color::Cyan),
+        |cv, _| {
+            cv.push_text(EcoString::from(format!("{n}. ")), span);
+            Ok(())
+        },
+        styles,
+    )?;
+    handle(cv, body, styles)?;
+    cv.push_text('\n', span);
+    Ok(())
+}
+
+fn render_term_item(
+    cv: &mut Converter,
+    term: &Content,
+    desc: &Content,
+    span: Span,
+    styles: StyleChain,
+) -> SourceResult<()> {
+    cv.with_style(
+        |s| s.attributes.set(Attribute::Bold),
+        |cv, st| handle(cv, term, st),
+        styles,
+    )?;
+    cv.push_text(": ", span);
+    handle(cv, desc, styles)?;
+    cv.push_text('\n', span);
+    Ok(())
+}
+
+// ── 递归内容处理器 ──────────────────────────────────────────────────────────
 
 fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResult<()> {
     // ── 透明包装器 ─────────────────────────────────────────────────────────
@@ -43,6 +250,10 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
         }
     } else if let Some(s) = child.to_packed::<StyledElem>() {
         handle(cv, &s.child, styles.chain(&s.styles))?;
+
+    // ── 内省 tag：递归上下文中静默忽略 ────────────────────────────────────
+    } else if child.is::<TagElem>() {
+        // 已在 handle_top 处理，此处不重复输出
 
     // ── 空白 / 换行 ────────────────────────────────────────────────────────
     } else if child.is::<SpaceElem>() {
@@ -85,6 +296,11 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
                 }
             }
         }
+        // realize 后 link 通过 StyleChain 中的 LinkElem::current 标识
+        if styles.get_cloned(LinkElem::current).is_some() {
+            style.attributes.set(Attribute::Underlined);
+            style.foreground_color = Some(Color::Cyan);
+        }
         cv.push(TermElement::text_with_style(text, child.span(), style));
 
     // ── 段落 ───────────────────────────────────────────────────────────────
@@ -99,7 +315,7 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             child.span(),
         );
 
-    // ── 行内样式 ───────────────────────────────────────────────────────────
+    // ── 行内样式（StrongElem / EmphElem 等在 realize 前出现时处理）─────────
     } else if let Some(elem) = child.to_packed::<StrongElem>() {
         cv.with_style(
             |s| s.attributes.set(Attribute::Bold),
@@ -141,84 +357,20 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
     } else if let Some(elem) = child.to_packed::<SuperElem>() {
         handle(cv, &elem.body, styles)?;
 
-    // ── 标题 ───────────────────────────────────────────────────────────────
+    // ── 标题（realize 前出现时仍处理）─────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<HeadingElem>() {
-        let level = elem.resolve_level(styles).get();
+        let level = elem.resolve_level(styles).get() as usize;
         let span = child.span();
         cv.push_text('\n', span);
         cv.with_style(
             |s| {
                 s.attributes.set(Attribute::Bold);
-                s.foreground_color = Some(match level {
-                    1 => Color::Yellow,
-                    2 => Color::Cyan,
-                    3 => Color::Green,
-                    _ => Color::Blue,
-                });
+                s.foreground_color = Some(heading_color(level));
             },
             |cv, st| handle(cv, &elem.body, st),
             styles,
         )?;
         cv.push_text('\n', span);
-
-    // ── 无序列表 ───────────────────────────────────────────────────────────
-    } else if let Some(elem) = child.to_packed::<ListElem>() {
-        let span = child.span();
-        for item in &elem.children {
-            cv.with_style(
-                |s| s.foreground_color = Some(Color::Cyan),
-                |cv, _| {
-                    cv.push_text("• ", span);
-                    Ok(())
-                },
-                styles,
-            )?;
-            handle(cv, &item.body, styles)?;
-            cv.push_text('\n', span);
-        }
-
-    // ── 有序列表 ───────────────────────────────────────────────────────────
-    } else if let Some(elem) = child.to_packed::<EnumElem>() {
-        let span = child.span();
-        let start: u64 = elem.start.get(styles).custom().unwrap_or(1);
-        let mut counter = start;
-        for item in &elem.children {
-            let num = match item.number.get(styles) {
-                Smart::Custom(n) => {
-                    counter = n + 1;
-                    n
-                }
-                Smart::Auto => {
-                    let n = counter;
-                    counter += 1;
-                    n
-                }
-            };
-            cv.with_style(
-                |s| s.foreground_color = Some(Color::Cyan),
-                |cv, _| {
-                    cv.push_text(EcoString::from(format!("{num}. ")), span);
-                    Ok(())
-                },
-                styles,
-            )?;
-            handle(cv, &item.body, styles)?;
-            cv.push_text('\n', span);
-        }
-
-    // ── 术语列表 ───────────────────────────────────────────────────────────
-    } else if let Some(elem) = child.to_packed::<TermsElem>() {
-        let span = child.span();
-        for item in &elem.children {
-            cv.with_style(
-                |s| s.attributes.set(Attribute::Bold),
-                |cv, st| handle(cv, &item.term, st),
-                styles,
-            )?;
-            cv.push_text(": ", span);
-            handle(cv, &item.description, styles)?;
-            cv.push_text('\n', span);
-        }
 
     // ── 链接 ───────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<LinkElem>() {
@@ -248,7 +400,19 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             styles,
         )?;
 
-    // ── 代码 / Raw ─────────────────────────────────────────────────────────
+    // ── 代码行（RawLine：realize 后 block/inline raw 都以此形式出现）────────
+    } else if let Some(elem) = child.to_packed::<RawLine>() {
+        let span = child.span();
+        cv.with_style(
+            |s| s.foreground_color = Some(Color::Green),
+            |cv, _| {
+                cv.push_text(elem.text.clone(), span);
+                Ok(())
+            },
+            styles,
+        )?;
+
+    // ── 代码块（RawElem：realize 前出现或 inline）─────────────────────────
     } else if let Some(elem) = child.to_packed::<RawElem>() {
         let is_block = elem.block.get(styles);
         let text: EcoString = match &elem.text {
@@ -282,10 +446,28 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             handle(cv, body, styles)?;
         }
     } else if let Some(elem) = child.to_packed::<BlockElem>() {
-        if let Some(BlockBody::Content(body)) = elem.body.get_ref(styles) {
+        if let Some(level) = cv.pending_heading.take() {
+            // 此 block 来自标题（HEADING_RULE 产生 BlockBody::Content）
+            if let Some(BlockBody::Content(body)) = elem.body.get_ref(styles) {
+                let span = child.span();
+                cv.push_text('\n', span);
+                cv.with_style(
+                    |s| {
+                        s.attributes.set(Attribute::Bold);
+                        s.foreground_color = Some(heading_color(level));
+                    },
+                    |cv, st| handle(cv, body, st),
+                    styles,
+                )?;
+                cv.push_text('\n', span);
+            }
+        } else if let Some(BlockBody::Content(body)) = elem.body.get_ref(styles) {
+            // 普通内容块
             handle(cv, body, styles)?;
             cv.push_text('\n', child.span());
         }
+        // MultiLayouter / SingleLayouter（列表/枚举/术语块）：静默跳过
+        // 它们的内容已通过 TagElem 渲染
 
     // ── 间距 ───────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<HElem>() {
@@ -308,10 +490,37 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
     Ok(())
 }
 
+// ── 辅助函数 ────────────────────────────────────────────────────────────────
+
+fn heading_color(level: usize) -> Color {
+    match level {
+        1 => Color::Yellow,
+        2 => Color::Cyan,
+        3 => Color::Green,
+        _ => Color::Blue,
+    }
+}
+
+// ── Converter 结构体 ────────────────────────────────────────────────────────
+
+/// 缓冲的第一个列表/枚举/术语项（出现在父元素 tag 之前）
+#[derive(Clone)]
+enum PendingItem {
+    List(Content),
+    Enum(Smart<u64>, Content),
+    Term(Content, Content), // (term, description)
+}
+
 pub struct Converter<'a, 'b> {
     pub engine: &'a mut Engine<'b>,
     pub output: EcoVec<TermElement>,
     pub current_style: ContentStyle,
+    /// 来自 Tag::Start(HeadingElem) 的级别；由下一个 BlockElem 消费
+    pending_heading: Option<usize>,
+    /// 第一个列表/枚举/术语项（等待父 tag 以确定计数器起始值）
+    pending_first_item: Option<PendingItem>,
+    /// 当前枚举计数器
+    enum_counter: u64,
 }
 
 impl Converter<'_, '_> {

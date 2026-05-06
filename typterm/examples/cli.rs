@@ -1,6 +1,5 @@
 use clap::Parser as _;
 use tinymist_world::{args::CompileOnceArgs, print_diagnostics};
-use typst::layout::PagedDocument;
 
 fn main() {
     let args = CompileOnceArgs::parse();

@@ -1,5 +1,3 @@
-use typst::layout::PagedDocument;
-
 pub mod size_protocol;
 
 pub mod document;
