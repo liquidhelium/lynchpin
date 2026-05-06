@@ -279,42 +279,70 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             styles,
         )?;
 
-    // ── Code (after realize: RawLine for block/inline; RawElem pre-realize) ───
+    // ── Code: syntax-highlighted via synthesized RawLine bodies ──────────────────
+    // `RawElem::synthesize` (called during realization preparation) populates
+    // `elem.lines` with `RawLine` values whose `body` field contains a sequence
+    // of `TextElem`s wrapped in `StyledElem`s carrying `TextElem::fill` colors
+    // (only for tokens whose color differs from the theme’s default foreground).
+    // We use `render_raw_line_body` to walk that tree and extract those colors.
     } else if let Some(elem) = child.to_packed::<RawLine>() {
+        // A RawLine that reached convert.rs directly (e.g. via a user
+        // `show raw.line: …` rule). Render its highlighted body.
         let span = child.span();
         cv.with_style(
-            |s| s.foreground_color = Some(Color::Green),
-            |cv, _| {
-                cv.push_text(elem.text.clone(), span);
-                Ok(())
-            },
+            |s| s.foreground_color = Some(Color::Grey),
+            |cv, st| render_raw_line_body(cv, &elem.body, st),
             styles,
         )?;
+        // Caller is responsible for inserting the line separator when iterating
+        // multiple lines; a single RawLine from a show rule just emits its text.
+        let _ = span; // span already used in body
     } else if let Some(elem) = child.to_packed::<RawElem>() {
         let is_block = elem.block.get(styles);
-        let text: EcoString = match &elem.text {
-            RawContent::Text(t) => t.clone(),
-            RawContent::Lines(lines) => lines
-                .iter()
-                .map(|(s, _)| s.as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
-                .into(),
-        };
         let span = child.span();
-        if is_block {
-            cv.push_text('\n', span);
-        }
-        cv.with_style(
-            |s| s.foreground_color = Some(Color::Green),
-            |cv, _| {
-                cv.push_text(text.clone(), span);
-                Ok(())
-            },
-            styles,
-        )?;
-        if is_block {
-            cv.push_text('\n', span);
+
+        // Use the synthesized highlighted lines when available (always the case
+        // after realization preparation). Fall back to plain text if somehow
+        // `lines` was not populated (e.g. pre-synthesis path).
+        let lines = elem.lines.as_deref().unwrap_or_default();
+        if !lines.is_empty() {
+            if is_block {
+                cv.push_text('\n', span);
+            }
+            for (i, line) in lines.iter().enumerate() {
+                cv.with_style(
+                    |s| s.foreground_color = Some(Color::Grey),
+                    |cv, st| render_raw_line_body(cv, &line.body, st),
+                    styles,
+                )?;
+                // Separate lines with newlines; the last line also gets one so
+                // that block raw ends with a trailing newline.
+                if is_block || i + 1 < lines.len() {
+                    cv.push_text('\n', span);
+                }
+            }
+        } else {
+            // Fallback: no synthesized lines — render plain text in green.
+            let text: EcoString = match &elem.text {
+                RawContent::Text(t) => t.clone(),
+                RawContent::Lines(lines) => lines
+                    .iter()
+                    .map(|(s, _)| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .into(),
+            };
+            if is_block {
+                cv.push_text('\n', span);
+            }
+            cv.with_style(
+                |s| s.foreground_color = Some(Color::Green),
+                |cv, _| { cv.push_text(text.clone(), span); Ok(()) },
+                styles,
+            )?;
+            if is_block {
+                cv.push_text('\n', span);
+            }
         }
 
     // ── Layout containers ─────────────────────────────────────────────────────
@@ -412,7 +440,109 @@ fn render_term_item(
     Ok(())
 }
 
-// ── Heading colour ────────────────────────────────────────────────────────────
+// ── Syntax-highlighted raw line body renderer ────────────────────────────
+
+/// Renders the highlighted `body` of a `RawLine`.
+///
+/// Unlike the general `handle` function this also reads `TextElem::fill` from
+/// the StyleChain, but **only when** a `StyledElem` in the body explicitly sets
+/// it (checked via `Styles::has`).  This avoids applying the default fill
+/// color (`BLACK`) to unhighlighted tokens and to ordinary document text.
+///
+/// The caller should wrap this call in `with_style` to set the base green
+/// foreground so that unhighlighted tokens also look like code.
+fn render_raw_line_body(
+    cv: &mut Converter,
+    content: &Content,
+    styles: StyleChain,
+) -> SourceResult<()> {
+    // Transparent sequence: recurse.
+    if let Some(seq) = content.to_packed::<SequenceElem>() {
+        for c in &seq.children {
+            render_raw_line_body(cv, c, styles)?;
+        }
+        return Ok(());
+    }
+
+    // Styled wrapper: check if it explicitly sets `TextElem::fill`.
+    if let Some(s) = content.to_packed::<StyledElem>() {
+        let chained = styles.chain(&s.styles);
+
+        // Temporarily apply the fill color if this specific Styles map sets it.
+        // `Styles::has` checks only THIS map (not inherited), so unhighlighted
+        // tokens (whose StyledElem only sets e.g. span_offset) are unaffected.
+        let fill_color: Option<Color> = if s.styles.has(TextElem::fill) {
+            match chained.get_cloned(TextElem::fill) {
+                Paint::Solid(color) => {
+                    let (r, g, b, _) =
+                        color.to_rgb().into_format::<u8, u8>().into_components();
+                    Some(Color::Rgb { r, g, b })
+                }
+                _ => None, // gradient / tiling — ignore, keep base green
+            }
+        } else {
+            None
+        };
+
+        // Also read font-style attributes set by this map (bold/italic tokens).
+        let is_bold =
+            s.styles.has(TextElem::delta) && chained.get(TextElem::delta).0 > 0;
+        let is_italic = s.styles.has(TextElem::emph) && chained.get(TextElem::emph).0;
+
+        let saved = cv.current_style;
+        if let Some(fg) = fill_color {
+            cv.current_style.foreground_color = Some(fg);
+        }
+        if is_bold {
+            cv.current_style.attributes.set(Attribute::Bold);
+        }
+        if is_italic {
+            cv.current_style.attributes.set(Attribute::Italic);
+        }
+        render_raw_line_body(cv, &s.child, chained)?;
+        cv.current_style = saved;
+        return Ok(());
+    }
+
+    // Font-style wrappers produced by the highlighter for bold/italic/underline
+    // tokens (see `typst_library::text::raw::styled`).
+    if let Some(elem) = content.to_packed::<StrongElem>() {
+        cv.with_style(
+            |s| s.attributes.set(Attribute::Bold),
+            |cv, st| render_raw_line_body(cv, &elem.body, st),
+            styles,
+        )?;
+        return Ok(());
+    }
+    if let Some(elem) = content.to_packed::<EmphElem>() {
+        cv.with_style(
+            |s| s.attributes.set(Attribute::Italic),
+            |cv, st| render_raw_line_body(cv, &elem.body, st),
+            styles,
+        )?;
+        return Ok(());
+    }
+    if let Some(elem) = content.to_packed::<UnderlineElem>() {
+        cv.with_style(
+            |s| s.attributes.set(Attribute::Underlined),
+            |cv, st| render_raw_line_body(cv, &elem.body, st),
+            styles,
+        )?;
+        return Ok(());
+    }
+
+    // Leaf: plain text — emit with the current style (fill + font-style already
+    // applied by ancestor StyledElem / wrapper handling above).
+    if let Some(elem) = content.to_packed::<TextElem>() {
+        cv.push_text(elem.text.clone(), content.span());
+        return Ok(());
+    }
+
+    // Anything else in a raw body is silently ignored.
+    Ok(())
+}
+
+// ── Heading colour ────────────────────────────────────────────────────────
 
 fn heading_color(level: usize) -> Color {
     match level {

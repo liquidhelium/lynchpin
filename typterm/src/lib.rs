@@ -41,10 +41,11 @@ pub mod compile {
     ) -> SourceResult<TermDocument> {
         let library = world.library();
         let base = StyleChain::new(&library.styles);
-        // Use Target::Html to avoid triggering paged-layout-specific behaviour
-        // in elements. Terminal realization ignores built-in show rules entirely,
-        // but the target is still visible to user-defined `context target` checks.
-        let target = TargetElem::target.set(Target::Html).wrap();
+        // Use Target::Paged so that RawElem::synthesize emits syntax-highlight
+        // colors via `TextElem::fill` (not as HtmlElem CSS wrappers).
+        // Our realize_term skips all paged built-in show rules, so this only
+        // affects RawElem color generation and user `context target` checks.
+        let target = TargetElem::target.set(Target::Paged).wrap();
         let styles = base.chain(&target);
         let empty_introspector = Introspector::default();
 
