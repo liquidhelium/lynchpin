@@ -3794,9 +3794,12 @@ dependencies = [
 name = "typterm"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
+ "bumpalo",
  "clap",
  "comemo",
  "crossterm",
+ "ecow",
  "fontdb",
  "rustc-hash",
  "tinymist-world",

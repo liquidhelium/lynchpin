@@ -11,6 +11,9 @@ unicode-segmentation = "1.11"
 crossterm = "0.29"
 comemo = "0.5"
 rustc-hash = "2.1.2"
+arrayvec = "0.7"
+bumpalo = "3"
+ecow = "0.2"
 
 [dev-dependencies]
 tinymist-world = { workspace = true , features = ["system", "fonts"]}

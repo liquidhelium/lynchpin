@@ -1,10 +1,9 @@
 pub mod style {
+    use crossterm::style::ContentStyle;
 
-    use crossterm::style::*;
     #[derive(Debug, Clone, Default)]
     pub struct TermStyle {
         pub style: ContentStyle,
-        pub sizing: Option<crate::size_protocol::EncodeParams>,
     }
 
     impl AsRef<ContentStyle> for TermStyle {
@@ -13,6 +12,7 @@ pub mod style {
         }
     }
 }
+
 use std::fmt;
 
 use crossterm::style::{ContentStyle, StyledContent};
@@ -24,7 +24,7 @@ use typst::{
     syntax::Span,
 };
 
-use crate::{size_protocol::EncodeParams, term::style::TermStyle};
+use crate::term::style::TermStyle;
 
 #[derive(Debug, Clone)]
 pub struct TermDocument {
@@ -38,19 +38,10 @@ impl fmt::Display for TermDocument {
         for element in &self.flow {
             match element {
                 TermElement::Text(text) => {
-                    let raw = text.text.as_str();
-                    // Apply Kitty Text Sizing when sizing is set and text has no newlines.
-                    // Newlines are always emitted raw to avoid corrupting line advancement.
-                    let display: String = if let Some(ref sizing) = text.style.sizing {
-                        crate::size_protocol::KittyTextSizingEncoder::new()
-                            .encode(raw, sizing.clone())
-                    } else {
-                        raw.to_owned()
-                    };
-                    let styled = StyledContent::new(text.style.style, display.as_str());
+                    let styled = StyledContent::new(text.style.style, text.text.as_str());
                     write!(f, "{styled}")?;
                 }
-                // Frames are skipped as per design
+                // Frames are skipped in terminal output.
                 TermElement::Frame(_) => {}
             }
         }
@@ -69,6 +60,7 @@ pub struct TermFrame {
     pub frame: Frame,
     pub span: Span,
 }
+
 #[derive(Debug, Clone)]
 pub struct TermText {
     pub text: EcoString,
@@ -95,26 +87,7 @@ impl TermElement {
         TermElement::Text(TermText {
             text: text.into(),
             span,
-            style: TermStyle {
-                style,
-                sizing: None,
-            },
-        })
-    }
-    /// Create a styled text element.
-    pub fn text_with_style_and_size(
-        text: impl Into<EcoString>,
-        span: Span,
-        style: ContentStyle,
-        sizing: EncodeParams,
-    ) -> TermElement {
-        TermElement::Text(TermText {
-            text: text.into(),
-            span,
-            style: TermStyle {
-                style,
-                sizing: Some(sizing),
-            },
+            style: TermStyle { style },
         })
     }
 }

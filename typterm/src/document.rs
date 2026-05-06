@@ -1,23 +1,22 @@
-use std::num::NonZeroUsize;
-
 use crate::term::{TermDocument, TermElement};
 use comemo::{Tracked, TrackedMut};
 use rustc_hash::FxHashSet;
+use std::num::NonZeroUsize;
 use typst::{
     World,
     diag::SourceResult,
     engine::{Engine, Route, Sink, Traced},
-    foundations::{Content, StyleChain},
-    introspection::{Introspector, IntrospectorBuilder, Location, Locator},
+    foundations::StyleChain,
+    introspection::{IntrospectorBuilder, Location},
     layout::{Position, Transform},
     model::DocumentInfo,
-    routines::{Arenas, RealizationKind, Routines},
+    routines::Arenas,
     utils::NonZeroExt,
 };
 
 pub fn term_document(
     engine: &mut Engine,
-    content: &Content,
+    content: &typst::foundations::Content,
     styles: StyleChain,
 ) -> SourceResult<TermDocument> {
     term_document_impl(
@@ -35,16 +34,15 @@ pub fn term_document(
 #[comemo::memoize]
 #[allow(clippy::too_many_arguments)]
 fn term_document_impl(
-    routines: &Routines,
+    routines: &typst::routines::Routines,
     world: Tracked<dyn World + '_>,
-    introspector: Tracked<Introspector>,
+    introspector: Tracked<typst::introspection::Introspector>,
     traced: Tracked<Traced>,
     sink: TrackedMut<Sink>,
     route: Tracked<Route>,
-    content: &Content,
+    content: &typst::foundations::Content,
     styles: StyleChain,
 ) -> SourceResult<TermDocument> {
-    let mut locator = Locator::root().split();
     let mut engine = Engine {
         routines,
         world,
@@ -54,60 +52,41 @@ fn term_document_impl(
         route: Route::extend(route).unnested(),
     };
 
-    // Create this upfront to make it as stable as possible.
-    // let footnote_locator = locator.next(&());
-
-    // Mark the external styles as "outside" so that they are valid at the
-    // document level.
+    // Mark the external styles as "outside" so that document-level set rules
+    // are recognized correctly.
     let styles = styles.to_map().outside();
     let styles = StyleChain::new(&styles);
 
     let arenas = Arenas::default();
     let mut info = DocumentInfo::default();
-    let children = (engine.routines.realize)(
-        RealizationKind::LayoutDocument { info: &mut info },
+
+    // Use our own terminal realize instead of the paged/HTML realize.
+    let children = crate::realize::realize_term(
         &mut engine,
-        &mut locator,
         &arenas,
+        &mut info,
         content,
         styles,
     )?;
 
-    let nodes =
-        crate::convert::convert_to_nodes(&mut engine, &mut locator, children.iter().copied())?;
-    // let introspectibles =  {
-    //     // Add a footnote container at the end, but only if the user did not
-    //     // provide their own `<html>` or `<body>` element.
-    //     let notes = crate::fragment::html_block_fragment(
-    //         &mut engine,
-    //         FootnoteContainer::shared(),
-    //         footnote_locator,
-    //         StyleChain::new(&Styles::root(&children, styles)),
-    //         Whitespace::Normal,
-    //     )?;
-    //     nodes.extend(notes);
-    //     nodes
-    // };
+    let nodes = crate::convert::convert_to_nodes(
+        &mut engine,
+        children.iter().copied(),
+    )?;
 
     let mut link_targets = FxHashSet::default();
     let introspector = introspect_term(&nodes, &mut link_targets);
-    // let mut root = root_element(output, &info);
-    // crate::link::identify_link_targets(&mut root, &mut introspector, link_targets);
 
-    Ok(TermDocument {
-        flow: nodes,
-        info,
-        introspector,
-    })
-    // todo!()
+    Ok(TermDocument { flow: nodes, info, introspector })
 }
 
-// Introspects Terminal nodes.
-// #[typst_macros::time(name = "introspect html")]
-fn introspect_term(output: &[TermElement], link_targets: &mut FxHashSet<Location>) -> Introspector {
+fn introspect_term(
+    output: &[TermElement],
+    link_targets: &mut FxHashSet<Location>,
+) -> typst::introspection::Introspector {
     fn discover(
         builder: &mut IntrospectorBuilder,
-        sink: &mut Vec<(Content, Position)>,
+        sink: &mut Vec<(typst::foundations::Content, Position)>,
         _link_targets: &mut FxHashSet<Location>,
         nodes: &[TermElement],
     ) {
@@ -122,33 +101,6 @@ fn introspect_term(output: &[TermElement], link_targets: &mut FxHashSet<Location
                         Transform::identity(),
                     );
                 }
-                // HtmlNode::Tag(tag) => {
-                //     builder.discover_in_tag(
-                //         sink,
-                //         tag,
-                //         Position { page: NonZeroUsize::ONE, point: Point::zero() },
-                //     );
-                // }
-                // HtmlNode::Text(_, _) => {}
-                // HtmlNode::Element(elem) => {
-                //     if let Some(parent) = elem.parent {
-                //         let mut nested = vec![];
-                //         discover(builder, &mut nested, link_targets, &elem.children);
-                //         builder.register_insertion(parent, nested);
-                //     } else {
-                //         discover(builder, sink, link_targets, &elem.children)
-                //     }
-                // }
-                // HtmlNode::Frame(frame) => {
-                //     builder.discover_in_frame(
-                //         sink,
-                //         &frame.inner,
-                //         NonZeroUsize::ONE,
-                //         Transform::identity(),
-                //     );
-                //     crate::link::introspect_frame_links(&frame.inner, link_targets);
-                // }
-                _ => todo!(),
             }
         }
     }

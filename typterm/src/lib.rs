@@ -1,4 +1,4 @@
-pub mod size_protocol;
+pub mod realize;
 
 pub mod document;
 
@@ -34,8 +34,6 @@ pub mod compile {
         sink.values()
     }
 
-    /// The internal implementation of `compile` with a bit lower-level interface
-    /// that is also used by `trace`.
     fn compile_impl(
         world: Tracked<dyn World + '_>,
         traced: Tracked<Traced>,
@@ -43,7 +41,10 @@ pub mod compile {
     ) -> SourceResult<TermDocument> {
         let library = world.library();
         let base = StyleChain::new(&library.styles);
-        let target = TargetElem::target.set(Target::Paged).wrap();
+        // Use Target::Html to avoid triggering paged-layout-specific behaviour
+        // in elements. Terminal realization ignores built-in show rules entirely,
+        // but the target is still visible to user-defined `context target` checks.
+        let target = TargetElem::target.set(Target::Html).wrap();
         let styles = base.chain(&target);
         let empty_introspector = Introspector::default();
 
@@ -70,18 +71,8 @@ pub mod compile {
         let mut document: TermDocument;
 
         // Relayout until all introspections stabilize.
-        // If that doesn't happen within five attempts, we give up.
+        // Terminal realization produces no tags, so this converges in one pass.
         loop {
-            // The name of the iterations for timing scopes.
-            const ITER_NAMES: &[&str] = &[
-                "layout (1)",
-                "layout (2)",
-                "layout (3)",
-                "layout (4)",
-                "layout (5)",
-            ];
-            // let _scope = TimingScope::new(ITER_NAMES[iter]);
-
             subsink = Sink::new();
 
             let constraint = comemo::Constraint::new();
@@ -94,7 +85,6 @@ pub mod compile {
                 routines: &ROUTINES,
             };
 
-            // Layout!
             document = term_document(&mut engine, &content, styles)?;
             introspector = &document.introspector;
             iter += 1;
@@ -123,7 +113,6 @@ pub mod compile {
         Ok(document)
     }
 
-    /// Deduplicate diagnostics.
     fn deduplicate(mut diags: EcoVec<SourceDiagnostic>) -> EcoVec<SourceDiagnostic> {
         let mut unique = FxHashSet::default();
         diags.retain(|diag| {
@@ -132,6 +121,7 @@ pub mod compile {
         });
         diags
     }
+
     fn hint_invalid_main_file(
         world: Tracked<dyn World + '_>,
         file_error: FileError,
@@ -140,15 +130,10 @@ pub mod compile {
         let is_utf8_error = matches!(file_error, FileError::InvalidUtf8);
         let mut diagnostic = SourceDiagnostic::error(Span::detached(), EcoString::from(file_error));
 
-        // Attempt to provide helpful hints for UTF-8 errors. Perhaps the user
-        // mistyped the filename. For example, they could have written "file.pdf"
-        // instead of "file.typ".
         if is_utf8_error {
             let path = input.vpath();
             let extension = path.as_rootless_path().extension();
             if extension.is_some_and(|extension| extension == "typ") {
-                // No hints if the file is already a .typ file.
-                // The file is indeed just invalid.
                 return eco_vec![diagnostic];
             }
 
@@ -159,7 +144,6 @@ pub mod compile {
                         extension.to_string_lossy()
                     ));
                 }
-
                 None => {
                     diagnostic.hint("a file without an extension is not usually a Typst file");
                 }
@@ -173,7 +157,3 @@ pub mod compile {
         eco_vec![diagnostic]
     }
 }
-
-// pub fn transform(document: &PagedDocument) -> String {
-
-// }
