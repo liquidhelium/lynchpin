@@ -2,166 +2,180 @@ use typst::layout::PagedDocument;
 
 pub mod size_protocol;
 
-pub mod document {
-    use crate::term::TermDocument;
-    use comemo::{Tracked, TrackedMut};
+pub mod document;
+
+pub mod term;
+
+pub mod convert;
+
+pub mod compile {
+    use comemo::{Track, Tracked};
+    use rustc_hash::FxHashSet;
     use typst::{
-        World,
-        diag::SourceResult,
-        engine::{Engine, Route, Sink, Traced},
-        foundations::{Content, StyleChain},
-        introspection::{Introspector, Locator},
-        model::DocumentInfo,
-        routines::{Arenas, RealizationKind, Routines},
+        __warning, ROUTINES, World, diag::{FileError, SourceDiagnostic, SourceResult, Warned}, ecow::{EcoString, EcoVec, eco_format, eco_vec}, engine::{Engine, Route, Sink, Traced}, foundations::{StyleChain, Styles, Target, TargetElem, Value}, introspection::Introspector, syntax::{FileId, Span}
     };
 
-    pub fn term_document(
-        engine: &mut Engine,
-        content: &Content,
-        styles: StyleChain,
-    ) -> SourceResult<TermDocument> {
-        html_document_impl(
-            engine.routines,
-            engine.world,
-            engine.introspector,
-            engine.traced,
-            TrackedMut::reborrow_mut(&mut engine.sink),
-            engine.route.track(),
-            content,
-            styles,
-        )
-    }
+    use crate::{document::term_document, term::TermDocument};
 
-    #[comemo::memoize]
-    #[allow(clippy::too_many_arguments)]
-    fn html_document_impl(
-        routines: &Routines,
-        world: Tracked<dyn World + '_>,
-        introspector: Tracked<Introspector>,
-        traced: Tracked<Traced>,
-        sink: TrackedMut<Sink>,
-        route: Tracked<Route>,
-        content: &Content,
-        styles: StyleChain,
-    ) -> SourceResult<TermDocument> {
-        let mut locator = Locator::root().split();
-        let mut engine = Engine {
-            routines,
-            world,
-            introspector,
-            traced,
-            sink,
-            route: Route::extend(route).unnested(),
-        };
-
-        // Create this upfront to make it as stable as possible.
-        let footnote_locator = locator.next(&());
-
-        // Mark the external styles as "outside" so that they are valid at the
-        // document level.
-        let styles = styles.to_map().outside();
-        let styles = StyleChain::new(&styles);
-
-        let arenas = Arenas::default();
-        let mut info = DocumentInfo::default();
-        let children = (engine.routines.realize)(
-            RealizationKind::LayoutDocument { info: &mut info },
-            &mut engine,
-            &mut locator,
-            &arenas,
-            content,
-            styles,
-        )?;
-
-        // let nodes = crate::convert::convert_to_nodes(
-        //     &mut engine,
-        //     &mut locator,
-        //     children.iter().copied(),
-        //     ConversionLevel::Block,
-        //     Whitespace::Normal,
-        // )?;
-
-        // let mut output = classify_output(nodes.clone())?;
-        // let introspectibles = if let OutputKind::Leaves(leaves) = &mut output {
-        //     // Add a footnote container at the end, but only if the user did not
-        //     // provide their own `<html>` or `<body>` element.
-        //     let notes = crate::fragment::html_block_fragment(
-        //         &mut engine,
-        //         FootnoteContainer::shared(),
-        //         footnote_locator,
-        //         StyleChain::new(&Styles::root(&children, styles)),
-        //         Whitespace::Normal,
-        //     )?;
-        //     leaves.extend(notes);
-        //     leaves
-        // } else {
-        //     FootnoteContainer::unsupported_with_custom_dom(&engine)?;
-        //     &nodes
-        // };
-
-        // let mut link_targets = FxHashSet::default();
-        // let mut introspector = introspect_html(introspectibles, &mut link_targets);
-        // let mut root = root_element(output, &info);
-        // crate::link::identify_link_targets(&mut root, &mut introspector, link_targets);
-
-        // Ok(HtmlDocument { info, root, introspector })
-        todo!()
-    }
-}
-
-pub mod term {
-    pub mod style {
-        use std::process::Command;
-
-        use crossterm::style::*;
-
-        pub struct TermStyle {
-            style: ContentStyle,
-            pub sizing: Option<crate::size_protocol::EncodeParams>,
+    pub fn compile(world: &dyn World) -> Warned<SourceResult<TermDocument>> {
+        let mut sink = Sink::new();
+        let output =
+            compile_impl(world.track(), Traced::default().track(), &mut sink).map_err(deduplicate);
+        Warned {
+            output,
+            warnings: sink.warnings(),
         }
+    }
 
-        impl AsRef<ContentStyle> for TermStyle {
-            fn as_ref(&self) -> &ContentStyle {
-                &self.style
+    /// Compiles sources and returns all values and styles observed at the given
+    /// `span` during compilation.
+    pub fn trace(world: &dyn World, span: Span) -> EcoVec<(Value, Option<Styles>)> {
+        let mut sink = Sink::new();
+        let traced = Traced::new(span);
+        compile_impl(world.track(), traced.track(), &mut sink).ok();
+        sink.values()
+    }
+
+    /// The internal implementation of `compile` with a bit lower-level interface
+    /// that is also used by `trace`.
+    fn compile_impl(
+        world: Tracked<dyn World + '_>,
+        traced: Tracked<Traced>,
+        sink: &mut Sink,
+    ) -> SourceResult<TermDocument> {
+        let library = world.library();
+        let base = StyleChain::new(&library.styles);
+        let target = TargetElem::target.set(Target::Paged).wrap();
+        let styles = base.chain(&target);
+        let empty_introspector = Introspector::default();
+
+        // Fetch the main source file once.
+        let main = world.main();
+        let main = world
+            .source(main)
+            .map_err(|err| hint_invalid_main_file(world, err, main))?;
+
+        // First evaluate the main source file into a module.
+        let content = typst_eval::eval(
+            &ROUTINES,
+            world,
+            traced,
+            sink.track_mut(),
+            Route::default().track(),
+            &main,
+        )?
+        .content();
+
+        let mut iter = 0;
+        let mut subsink;
+        let mut introspector = &empty_introspector;
+        let mut document: TermDocument;
+
+        // Relayout until all introspections stabilize.
+        // If that doesn't happen within five attempts, we give up.
+        loop {
+            // The name of the iterations for timing scopes.
+            const ITER_NAMES: &[&str] = &[
+                "layout (1)",
+                "layout (2)",
+                "layout (3)",
+                "layout (4)",
+                "layout (5)",
+            ];
+            // let _scope = TimingScope::new(ITER_NAMES[iter]);
+
+            subsink = Sink::new();
+
+            let constraint = comemo::Constraint::new();
+            let mut engine = Engine {
+                world,
+                introspector: introspector.track_with(&constraint),
+                traced,
+                sink: subsink.track_mut(),
+                route: Route::default(),
+                routines: &ROUTINES,
+            };
+
+            // Layout!
+            document = term_document(&mut engine, &content, styles)?;
+            introspector = &document.introspector;
+            iter += 1;
+
+            if constraint.validate(introspector) {
+                break;
+            }
+
+            if iter >= 5 {
+                subsink.warn(__warning!(
+                    Span::detached(), "layout did not converge within 5 attempts";
+                    hint: "check if any states or queries are updating themselves"
+                ));
+                break;
             }
         }
-    }
-    use typst::{
-        ecow::{EcoString, EcoVec},
-        introspection::Introspector,
-        layout::Frame,
-        model::DocumentInfo,
-        syntax::Span,
-    };
 
-    use crate::term::style::TermStyle;
+        sink.extend_from_sink(subsink);
 
-    #[derive(Debug, Clone)]
-    pub struct TermDocument {
-        pub flow: EcoVec<TermElement>,
-        pub info: DocumentInfo,
-        pub introspector: Introspector,
+        // Promote delayed errors.
+        let delayed = sink.delayed();
+        if !delayed.is_empty() {
+            return Err(delayed);
+        }
+
+        Ok(document)
     }
 
-    #[derive(Debug, Clone)]
-    pub enum TermElement {
-        Text(EcoString, Span),
-        Frame(TermFrame),
+    /// Deduplicate diagnostics.
+    fn deduplicate(mut diags: EcoVec<SourceDiagnostic>) -> EcoVec<SourceDiagnostic> {
+        let mut unique = FxHashSet::default();
+        diags.retain(|diag| {
+            let hash = typst::utils::hash128(&(&diag.span, &diag.message));
+            unique.insert(hash)
+        });
+        diags
     }
+    fn hint_invalid_main_file(
+        world: Tracked<dyn World + '_>,
+        file_error: FileError,
+        input: FileId,
+    ) -> EcoVec<SourceDiagnostic> {
+        let is_utf8_error = matches!(file_error, FileError::InvalidUtf8);
+        let mut diagnostic = SourceDiagnostic::error(Span::detached(), EcoString::from(file_error));
 
-    #[derive(Debug, Clone)]
-    pub struct TermFrame {
-        pub frame: Frame,
-        pub span: Span,
-    }
-    pub struct TermText {
-        pub text: EcoString,
-        pub span: Span,
-        pub style: TermStyle,
+        // Attempt to provide helpful hints for UTF-8 errors. Perhaps the user
+        // mistyped the filename. For example, they could have written "file.pdf"
+        // instead of "file.typ".
+        if is_utf8_error {
+            let path = input.vpath();
+            let extension = path.as_rootless_path().extension();
+            if extension.is_some_and(|extension| extension == "typ") {
+                // No hints if the file is already a .typ file.
+                // The file is indeed just invalid.
+                return eco_vec![diagnostic];
+            }
+
+            match extension {
+                Some(extension) => {
+                    diagnostic.hint(eco_format!(
+                        "a file with the `.{}` extension is not usually a Typst file",
+                        extension.to_string_lossy()
+                    ));
+                }
+
+                None => {
+                    diagnostic.hint("a file without an extension is not usually a Typst file");
+                }
+            };
+
+            if world.source(input.with_extension("typ")).is_ok() {
+                diagnostic.hint("check if you meant to use the `.typ` extension instead");
+            }
+        }
+
+        eco_vec![diagnostic]
     }
 }
 
-pub fn transform(document: &PagedDocument) -> String {
-    let _ = document;
-    todo!()
-}
+// pub fn transform(document: &PagedDocument) -> String {
+
+// }

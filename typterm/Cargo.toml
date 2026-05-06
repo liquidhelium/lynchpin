@@ -5,11 +5,17 @@ edition = "2024"
 
 [dependencies]
 typst = { workspace = true }
+typst-eval = { workspace = true }
 unicode-width = "0.2"
 unicode-segmentation = "1.11"
 crossterm = "0.29"
 comemo = "0.5"
+rustc-hash = "2.1.2"
 
 [dev-dependencies]
 tinymist-world = { workspace = true , features = ["system", "fonts"]}
+# HACK: tinymist-world 0.14.6 has misconfigured feature sets.
+# this dependency is added to force cargo to enable those features.
+# TODO: remove this dependency when upstream updated.
+fontdb = {version = "0.23", default-features = false, features = ["fs", "memmap"]}
 clap = "4.5"
