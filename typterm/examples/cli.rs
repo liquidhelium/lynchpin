@@ -19,5 +19,5 @@ fn main() {
             return
         }
     };
-    print!("{s:?}")
+    print!("{s}")
 }

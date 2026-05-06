@@ -3,7 +3,7 @@ pub mod style {
     use crossterm::style::*;
     #[derive(Debug, Clone, Default)]
     pub struct TermStyle {
-        style: ContentStyle,
+        pub style: ContentStyle,
         pub sizing: Option<crate::size_protocol::EncodeParams>,
     }
 
@@ -13,6 +13,9 @@ pub mod style {
         }
     }
 }
+use std::fmt;
+
+use crossterm::style::{ContentStyle, StyledContent};
 use typst::{
     ecow::{EcoString, EcoVec},
     introspection::Introspector,
@@ -28,6 +31,25 @@ pub struct TermDocument {
     pub flow: EcoVec<TermElement>,
     pub info: DocumentInfo,
     pub introspector: Introspector,
+}
+
+impl fmt::Display for TermDocument {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for element in &self.flow {
+            match element {
+                TermElement::Text(text) => {
+                    let styled = StyledContent::new(
+                        text.style.style,
+                        text.text.as_str(),
+                    );
+                    write!(f, "{styled}")?;
+                }
+                // Frames are skipped as per design
+                TermElement::Frame(_) => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,11 +71,25 @@ pub struct TermText {
 }
 
 impl TermElement {
+    /// Create a plain text element with no styling.
     pub fn text(text: impl Into<EcoString>, span: Span) -> TermElement {
         TermElement::Text(TermText {
-            text:text.into(),
+            text: text.into(),
             span,
             style: Default::default(),
+        })
+    }
+
+    /// Create a styled text element.
+    pub fn text_with_style(
+        text: impl Into<EcoString>,
+        span: Span,
+        style: ContentStyle,
+    ) -> TermElement {
+        TermElement::Text(TermText {
+            text: text.into(),
+            span,
+            style: TermStyle { style, sizing: None },
         })
     }
 }
