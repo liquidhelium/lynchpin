@@ -7,13 +7,17 @@ use typst::{
     engine::Engine,
     foundations::{Content, SequenceElem, Smart, StyleChain, StyledElem},
     layout::{BlockBody, BlockElem, BoxElem, HElem, PagebreakElem, VElem},
-    model::{EmphElem, EnumElem, HeadingElem, LinkElem, ListElem, ParElem, ParbreakElem, QuoteElem, StrongElem, TermsElem},
+    model::{
+        EmphElem, EnumElem, HeadingElem, LinkElem, ListElem, ParElem, ParbreakElem, QuoteElem,
+        StrongElem, TermsElem,
+    },
     routines::Pair,
     syntax::Span,
     text::{
         DecoLine, HighlightElem, LinebreakElem, OverlineElem, RawContent, RawElem, RawLine,
         SmartQuoteElem, SpaceElem, StrikeElem, SubElem, SuperElem, TextElem, UnderlineElem,
     },
+    visualize::Paint,
 };
 
 // ── Public entry ─────────────────────────────────────────────────────────────
@@ -108,6 +112,27 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
             style.attributes.set(Attribute::Underlined);
             style.foreground_color = Some(Color::Cyan);
         }
+        let f = styles.get_cloned(TextElem::fill);
+        if f != typst::visualize::Color::BLACK.into() {
+            match f {
+                Paint::Gradient(_) => cv.engine.sink.warn(__warning!(
+                    child.span(),
+                    "Gradient fill was ignored during Terminal export",
+                )),
+                Paint::Tiling(_) => cv.engine.sink.warn(__warning!(
+                    child.span(),
+                    "Tiling fill was ignored during Terminal export",
+                )),
+                Paint::Solid(c) => {
+                    let r = c.to_linear_rgb();
+                    style.foreground_color = Some(Color::Rgb {
+                        r: (r.red * 256.0) as u8,
+                        g: (r.green * 256.0) as u8,
+                        b: (r.alpha * 256.0) as u8,
+                    })
+                }
+            }
+        }
         cv.push(TermElement::Text(TermText {
             text,
             span: child.span(),
@@ -144,7 +169,13 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
     } else if let Some(elem) = child.to_packed::<EnumElem>() {
         cv.enum_counter = elem.start.get(styles).unwrap_or(1);
         for item in &elem.children {
-            render_enum_item(cv, item.number.get(styles), &item.body, child.span(), styles)?;
+            render_enum_item(
+                cv,
+                item.number.get(styles),
+                &item.body,
+                child.span(),
+                styles,
+            )?;
         }
 
     // ── Term list ─────────────────────────────────────────────────────────────
@@ -302,7 +333,7 @@ fn handle(cv: &mut Converter, child: &Content, styles: StyleChain) -> SourceResu
         // BlockBody::MultiLayouter / SingleLayouter → silently skip
         // (list/enum/term blocks whose content was already emitted via tags).
 
-    // ── Spacing ───────────────────────────────────────────────────────────────
+        // ── Spacing ───────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<HElem>() {
         if !elem.amount.is_zero() {
             cv.push_text(' ', child.span());
@@ -408,7 +439,9 @@ impl Converter<'_, '_> {
         self.output.push(TermElement::Text(TermText {
             text,
             span,
-            style: TermStyle { style: self.current_style },
+            style: TermStyle {
+                style: self.current_style,
+            },
         }));
     }
 
