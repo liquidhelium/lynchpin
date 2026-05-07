@@ -1833,11 +1833,26 @@ dependencies = [
  "crossterm",
  "ecow",
  "fontdb",
+ "lynchpin-term-layout",
  "rustc-hash",
  "tinymist-world",
  "typst",
  "typst-eval",
  "unicode-segmentation",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "lynchpin-term-layout"
+version = "0.1.0"
+dependencies = [
+ "comemo",
+ "crossterm",
+ "ecow",
+ "rustc-hash",
+ "smallvec",
+ "typst",
+ "unicode-math-class",
  "unicode-width 0.2.2",
 ]
 
@@ -3539,7 +3554,7 @@ dependencies = [
  "rustc-hash",
  "typst-eval",
  "typst-html",
- "typst-layout",
+ "typst-layout 0.14.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "typst-library",
  "typst-macros",
  "typst-realize",
@@ -3593,6 +3608,40 @@ dependencies = [
  "typst-syntax",
  "typst-timing",
  "typst-utils",
+]
+
+[[package]]
+name = "typst-layout"
+version = "0.14.2"
+dependencies = [
+ "az",
+ "bumpalo",
+ "codex",
+ "comemo",
+ "ecow",
+ "either",
+ "hypher",
+ "icu_properties 1.5.1",
+ "icu_provider 1.5.0",
+ "icu_provider_adapters",
+ "icu_provider_blob",
+ "icu_segmenter",
+ "kurbo 0.12.0",
+ "memchr",
+ "rustc-hash",
+ "rustybuzz",
+ "smallvec",
+ "ttf-parser",
+ "typst-assets",
+ "typst-library",
+ "typst-macros",
+ "typst-syntax",
+ "typst-timing",
+ "typst-utils",
+ "unicode-bidi",
+ "unicode-math-class",
+ "unicode-script",
+ "unicode-segmentation",
 ]
 
 [[package]]

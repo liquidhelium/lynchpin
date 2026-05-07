@@ -15,79 +15,32 @@ pub mod style {
 
 use std::fmt;
 
-use crossterm::style::{ContentStyle, StyledContent};
-use typst::{
-    ecow::{EcoString, EcoVec},
-    introspection::Introspector,
-    layout::Frame,
-    model::DocumentInfo,
-    syntax::Span,
-};
+use typst::{introspection::Introspector, model::DocumentInfo};
 
-use crate::term::style::TermStyle;
+use lynchpin_term_layout::config::TermConfig;
+use lynchpin_term_layout::flow::TermPage;
 
+/// A compiled terminal document ready for display.
 #[derive(Debug, Clone)]
 pub struct TermDocument {
-    pub flow: EcoVec<TermElement>,
+    /// One page of terminal output (terminal rendering always produces exactly
+    /// one page; the field is `Vec` to leave room for future multi-page support).
+    pub pages: Vec<TermPage>,
     pub info: DocumentInfo,
     pub introspector: Introspector,
+    pub config: TermConfig,
 }
 
 impl fmt::Display for TermDocument {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for element in &self.flow {
-            match element {
-                TermElement::Text(text) => {
-                    let styled = StyledContent::new(text.style.style, text.text.as_str());
-                    write!(f, "{styled}")?;
-                }
-                // Frames are skipped in terminal output.
-                TermElement::Frame(_) => {}
+        for (i, page) in self.pages.iter().enumerate() {
+            if i > 0 {
+                // Blank separator line between pages.
+                writeln!(f)?;
             }
+            let grid = page.frame.render();
+            write!(f, "{}", grid.to_ansi())?;
         }
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum TermElement {
-    Text(TermText),
-    Frame(TermFrame),
-}
-
-#[derive(Debug, Clone)]
-pub struct TermFrame {
-    pub frame: Frame,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub struct TermText {
-    pub text: EcoString,
-    pub span: Span,
-    pub style: TermStyle,
-}
-
-impl TermElement {
-    /// Create a plain text element with no styling.
-    pub fn text(text: impl Into<EcoString>, span: Span) -> TermElement {
-        TermElement::Text(TermText {
-            text: text.into(),
-            span,
-            style: Default::default(),
-        })
-    }
-
-    /// Create a styled text element.
-    pub fn text_with_style(
-        text: impl Into<EcoString>,
-        span: Span,
-        style: ContentStyle,
-    ) -> TermElement {
-        TermElement::Text(TermText {
-            text: text.into(),
-            span,
-            style: TermStyle { style },
-        })
     }
 }

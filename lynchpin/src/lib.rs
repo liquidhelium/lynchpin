@@ -4,8 +4,6 @@ pub mod document;
 
 pub mod term;
 
-pub mod convert;
-
 pub mod compile {
     use comemo::{Track, Tracked};
     use rustc_hash::FxHashSet;

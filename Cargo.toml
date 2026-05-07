@@ -1,5 +1,9 @@
 [workspace]
-members = ["lynchpin"]
+members = [
+    "lynchpin",
+    "lynchpin-layout",
+    "lynchpin-term-layout"
+]
 resolver = "3"
 [workspace.dependencies]
 typst = "0.14"
