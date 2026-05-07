@@ -11,6 +11,7 @@ use crate::frame::{Col, Row, TermFrame, TermPoint, TermSize};
 use crate::stack::{compose_horizontal, compose_vertical};
 
 use super::{TermLimits, TermMathContext, TermMathFragment, TermMathFrameFragment};
+use crate::pad;
 
 // ── layout_attach ─────────────────────────────────────────────────────────────
 
@@ -120,21 +121,30 @@ fn layout_limits_mode(
     let below_frame = below.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
 
     let base_frame = base_frag.into_frame();
-    let _base_cols = base_frame.cols();
-    let _base_baseline = base_frame.baseline();
+
+    // Center above/below relative to base width.
+    let limit_width = above_frame.as_ref().map(|f| f.cols())
+        .max(below_frame.as_ref().map(|f| f.cols()))
+        .unwrap_or(0)
+        .max(base_frame.cols());
 
     // Determine the baseline index for compose_vertical.
-    // We always want the base to carry the reference baseline.
     let mut frames: Vec<TermFrame> = Vec::new();
     let mut baseline_idx: usize = 0;
 
     if let Some(af) = above_frame {
-        frames.push(af);
-        baseline_idx = 1; // base comes after above
+        let ac = af.cols();
+        let pad = (limit_width - ac).max(0) / 2;
+        frames.push(if pad > 0 { pad::pad_h(af, pad, limit_width - ac - pad) } else { af });
+        baseline_idx = 1;
     }
-    frames.push(base_frame);
+    let bc = base_frame.cols();
+    let pad = (limit_width - bc).max(0) / 2;
+    frames.push(if pad > 0 { pad::pad_h(base_frame, pad, limit_width - bc - pad) } else { base_frame });
     if let Some(bf) = below_frame {
-        frames.push(bf);
+        let bfc = bf.cols();
+        let pad = (limit_width - bfc).max(0) / 2;
+        frames.push(if pad > 0 { pad::pad_h(bf, pad, limit_width - bfc - pad) } else { bf });
     }
 
     let stack = compose_vertical(frames, /*gap=*/0, baseline_idx);
@@ -263,14 +273,16 @@ fn build_post_scripts_with_ic(
     let mut frame = TermFrame::new(TermSize::new(script_cols, total_rows));
     frame.set_baseline(new_baseline);
 
-    // Superscript sits above the baseline.
+    // Superscript right-aligned above baseline.
     if let Some(tf) = tr_frame {
-        frame.push_frame(TermPoint::new(0, 0), tf);
+        let x = (script_cols - tf.cols()).max(0);
+        frame.push_frame(TermPoint::new(x, 0), tf);
     }
-    // Subscript sits below the baseline.
+    // Subscript right-aligned below baseline.
     if let Some(bf) = br_frame {
+        let x = (script_cols - bf.cols()).max(0);
         let y = top_extra + base_rows;
-        frame.push_frame(TermPoint::new(0, y), bf);
+        frame.push_frame(TermPoint::new(x, y), bf);
     }
 
     Ok(Some(frame))
