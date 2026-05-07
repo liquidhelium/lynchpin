@@ -196,19 +196,22 @@ fn build_pre_scripts(
         .max(bl_frame.as_ref().map(|f| f.cols()))
         .unwrap_or(0);
 
-    // Total height of the pre-script side frame matches the base height.
-    let total_rows = base_rows.max(1);
+    // Add rows above/below base for pre-script placement.
+    let top_extra = if tl_frame.is_some() { 1 } else { 0 };
+    let bot_extra = if bl_frame.is_some() { 1 } else { 0 };
+    let total_rows = base_rows + top_extra + bot_extra;
+    let new_baseline = base_baseline + top_extra;
     let mut frame = TermFrame::new(TermSize::new(script_cols, total_rows));
-    frame.set_baseline(base_baseline);
+    frame.set_baseline(new_baseline);
 
-    // tl sits at the top (row 0), bl at the bottom.
+    // tl sits above baseline, bl below.
     if let Some(tf) = tl_frame {
         let x = (script_cols - tf.cols()).max(0); // right-align
         frame.push_frame(TermPoint::new(x, 0), tf);
     }
     if let Some(bf) = bl_frame {
         let x = (script_cols - bf.cols()).max(0); // right-align
-        let y = (total_rows - bf.rows()).max(0);
+        let y = top_extra + base_rows;
         frame.push_frame(TermPoint::new(x, y), bf);
     }
 
@@ -251,16 +254,22 @@ fn build_post_scripts_with_ic(
         .max(br_frame.as_ref().map(|f| f.cols()))
         .unwrap_or(0);
 
-    let total_rows = base_rows.max(1);
-    let mut frame = TermFrame::new(TermSize::new(script_cols, total_rows));
-    frame.set_baseline(base_baseline);
+    // Add rows above/below base for superscript/subscript placement.
+    let top_extra = if tr_frame.is_some() { 1 } else { 0 };
+    let bot_extra = if br_frame.is_some() { 1 } else { 0 };
+    let total_rows = base_rows + top_extra + bot_extra;
+    let new_baseline = base_baseline + top_extra;
 
-    // tr sits at the top, br at the bottom.
+    let mut frame = TermFrame::new(TermSize::new(script_cols, total_rows));
+    frame.set_baseline(new_baseline);
+
+    // Superscript sits above the baseline.
     if let Some(tf) = tr_frame {
         frame.push_frame(TermPoint::new(0, 0), tf);
     }
+    // Subscript sits below the baseline.
     if let Some(bf) = br_frame {
-        let y = (total_rows - bf.rows()).max(0);
+        let y = top_extra + base_rows;
         frame.push_frame(TermPoint::new(0, y), bf);
     }
 
@@ -270,11 +279,31 @@ fn build_post_scripts_with_ic(
 // ── Assembly ──────────────────────────────────────────────────────────────────
 
 /// Assemble pre-frame + base + post-frame into a single frame, baseline-aligned.
+///
+/// The base frame's baseline is padded if the pre/post frames have extra rows
+/// above the baseline, so that all three share the same effective baseline.
 fn assemble_with_pre_post(
     pre: Option<TermFrame>,
-    base: TermFrame,
+    mut base: TermFrame,
     post: Option<TermFrame>,
 ) -> TermFrame {
+    // Determine the max extra rows above the baseline from pre/post frames.
+    let top_pad = pre.as_ref().map(|f| f.ascent())
+        .max(post.as_ref().map(|f| f.ascent()))
+        .unwrap_or(0);
+    let bot_pad = pre.as_ref().map(|f| f.descent())
+        .max(post.as_ref().map(|f| f.descent()))
+        .unwrap_or(0);
+
+    // Pad the base frame so its baseline matches the script frames,
+    // and shift its content down by top_pad rows.
+    let old_bl = base.baseline();
+    if top_pad > 0 {
+        base.translate(TermPoint::new(0, top_pad));
+    }
+    base.set_rows(base.rows() + top_pad + bot_pad);
+    base.set_baseline(old_bl + top_pad);
+
     let mut parts: Vec<TermFrame> = Vec::new();
     if let Some(p) = pre  { parts.push(p); }
     parts.push(base);
