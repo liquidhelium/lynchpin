@@ -331,8 +331,36 @@ pub fn layout_document<'a>(
 ) -> SourceResult<Vec<TermPage>> {
     let mut state = FlowState::new(config);
 
-    for (child, styles) in pairs {
-        handle_block(&mut state, engine, child, styles)?;
+    // Collect pairs so we can merge inline equations back into paragraphs.
+    let pairs: Vec<Pair<'a>> = pairs.into_iter().collect();
+    let mut i = 0;
+
+    while i < pairs.len() {
+        let (child, styles) = &pairs[i];
+        if child.to_packed::<ParElem>().is_some() {
+            let mut kids: Vec<Content> = vec![(*child).clone()];
+            let mut merged_styles = *styles;
+            let mut j = i + 1;
+            while j < pairs.len() {
+                let (nchild, nstyles) = &pairs[j];
+                let is_inline_eq = nchild.to_packed::<EquationElem>()
+                    .is_some_and(|eq| !eq.block.get(*nstyles));
+                let is_par = nchild.to_packed::<ParElem>().is_some();
+                if is_inline_eq || is_par {
+                    kids.push((*nchild).clone());
+                    merged_styles = *nstyles;
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            i = j;
+            let seq = Content::sequence(kids);
+            handle_block(&mut state, engine, &seq, merged_styles)?;
+        } else {
+            handle_block(&mut state, engine, child, *styles)?;
+            i += 1;
+        }
     }
 
     // Compose all block frames vertically with a 1-row gap between each.

@@ -615,6 +615,9 @@ static PAR: GroupingRule = GroupingRule {
             || e == SubElem::ELEM
             || e == SuperElem::ELEM
             || e == RawElem::ELEM
+            || (e == EquationElem::ELEM
+                && content.to_packed::<EquationElem>()
+                    .is_some_and(|eq| eq.block.as_option() != &Some(true)))
     },
     inner: |content| content.elem() == SpaceElem::ELEM,
     interrupt: |elem| elem == ParElem::ELEM || elem == AlignElem::ELEM,

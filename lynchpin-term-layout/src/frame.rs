@@ -347,11 +347,6 @@ impl TermGrid {
             }
             if col >= 0 {
                 self.set(col, row, TermCell { ch, style });
-                // Mark wide-char continuation cells as blank (already correct
-                // for default; only needed when overwriting existing content).
-                for i in 1..w {
-                    self.set(col + i, row, TermCell { ch: ' ', style });
-                }
             }
             col += w;
         }
@@ -376,7 +371,8 @@ impl TermGrid {
             let mut cur_style = default_style;
             let mut have_style = false;
 
-            for col in 0..line_end {
+            let mut col: Col = 0;
+            while col < line_end {
                 let cell = self.get(col, row);
                 if cell.style != cur_style {
                     if have_style {
@@ -386,7 +382,9 @@ impl TermGrid {
                     have_style = cell.style != default_style;
                     cur_style = cell.style;
                 }
+                let w = char_cols(cell.ch) as Col;
                 out.push(cell.ch);
+                col += w.max(1);
             }
 
             if have_style {

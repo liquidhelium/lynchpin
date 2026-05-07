@@ -89,8 +89,8 @@ pub fn compose_vertical(frames: Vec<TermFrame>, gap: Row, baseline_idx: usize) -
 
     let mut y: Row = 0;
     for (i, frame) in frames.into_iter().enumerate() {
-        // Center the frame horizontally within the widest frame.
-        let cx = ((max_cols - frame.cols()) / 2).max(0);
+        // Left-align within the widest frame.
+        let cx: Col = 0; // left-aligned
         out.push_frame(TermPoint::new(cx, y), frame);
         y += heights[i];
         if i + 1 < n {
