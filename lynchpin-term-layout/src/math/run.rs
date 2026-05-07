@@ -296,6 +296,7 @@ pub fn build_delimiter_frame(
     }
     let width: Col = chars.iter().map(|c| crate::frame::char_cols(*c) as Col).max().unwrap_or(1);
     let mut frame = TermFrame::new(TermSize::new(width.max(1), height));
+    frame.set_baseline(height / 2); // vertically centred for horizontal composition
     for (i, ch) in chars.into_iter().enumerate() {
         frame.push_text(TermPoint::new(0, i as Row), ch.to_string(), style);
     }

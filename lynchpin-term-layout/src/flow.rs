@@ -256,9 +256,10 @@ fn handle_block(
             )?;
             state.push(frame);
         } else {
-            // An inline equation at block level — wrap it like a paragraph.
-            let frame = layout_paragraph(
-                engine, child, state.config, styles, ContentStyle::default(),
+            // Inline equation separated from its paragraph by realize_term.
+            // Render as inline math block (left-aligned, no paragraph wrapping).
+            let frame = crate::math::layout_equation_inline(
+                eq, engine, state.config, styles,
             )?;
             state.push(frame);
         }

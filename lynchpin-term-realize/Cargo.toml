@@ -1,0 +1,10 @@
+[package]
+name = "lynchpin-term-realize"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+typst = { workspace = true }
+comemo = "0.5"
+arrayvec = "0.7"
+ecow = "0.2"

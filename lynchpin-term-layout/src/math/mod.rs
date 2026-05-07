@@ -12,6 +12,7 @@
 pub mod fragment;
 pub mod run;
 pub mod text;
+pub mod operators;
 pub mod frac;
 pub mod root;
 pub mod attach;
@@ -132,17 +133,16 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
     // ── Content dispatcher ────────────────────────────────────────────────────
 
     /// Walk the content tree and dispatch each element to the appropriate
-    /// sub-module, accumulating results into `self.fragments`.
+    /// sub-module.
     ///
-    /// This is a direct traversal (no `SplitLocator` / `RealizationKind::Math`)
-    /// which is sufficient for terminal rendering since show-rules are not
-    /// significant in a plain-text output.
+    /// Uses direct tree traversal; `lynchpin_term_realize` is available
+    /// for realizing non-math content that may contain show rules.
     pub fn layout_into_self(
         &mut self,
         content: &Content,
         styles: StyleChain,
     ) -> SourceResult<()> {
-        // ── Transparent containers ────────────────────────────────────────────
+        // ── Transparent containers ──────────────────────────────────────────
         if let Some(seq) = content.to_packed::<SequenceElem>() {
             for child in &seq.children {
                 self.layout_into_self(child, styles)?;
@@ -156,7 +156,6 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
         }
 
         if let Some(eq) = content.to_packed::<EquationElem>() {
-            // Propagate display/text size from nested EquationElems.
             let nested_display = eq.block.get(styles);
             let size_style = if nested_display {
                 EquationElem::size.set(MathSize::Display).wrap()
@@ -166,6 +165,24 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             self.layout_into_self(&eq.body, styles.chain(&size_style))?;
             return Ok(());
         }
+
+        // ── BoxElem ─────────────────────────────────────────────────────────
+        if let Some(elem) = content.to_packed::<BoxElem>() {
+            if let Some(body) = elem.body.get_ref(styles) {
+                self.layout_into_self(body, styles)?;
+            }
+            return Ok(());
+        }
+
+        self.dispatch_element(content, styles)
+    }
+
+    /// Dispatch a single element to the appropriate layout handler.
+    fn dispatch_element(
+        &mut self,
+        content: &Content,
+        styles: StyleChain,
+    ) -> SourceResult<()> {
 
         // ── Whitespace & structural ───────────────────────────────────────────
 
@@ -358,14 +375,6 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             return Ok(());
         }
 
-        // ── BoxElem (inline box within math) ──────────────────────────────────
-
-        if let Some(elem) = content.to_packed::<BoxElem>() {
-            if let Some(body) = elem.body.get_ref(styles) {
-                self.layout_into_self(body, styles)?;
-            }
-            return Ok(());
-        }
 
         // ── Unknown: emit a placeholder fragment ──────────────────────────────
         let name = content.elem().name();

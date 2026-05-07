@@ -10,6 +10,7 @@ use unicode_math_class::MathClass;
 use crate::frame::TermFrame;
 
 use super::fragment::{TermLimits, TermMathFragment, TermMathFrameFragment};
+use super::operators;
 use super::TermMathContext;
 
 // ── layout_text ───────────────────────────────────────────────────────────────
@@ -53,8 +54,9 @@ fn single_text_fragment(text: &str) -> TermMathFrameFragment {
 
 /// Layout a [`SymbolElem`] in a math context.
 ///
-/// Each grapheme cluster (character) is turned into a separate
-/// `TermMathFrameFragment` so that class-based spacing can operate per-glyph.
+/// Each character is turned into a separate `TermMathFrameFragment`.
+/// In display mode, large operators (∑, ∫, ∏, …) are rendered as
+/// composed multi-row forms instead of single characters.
 pub fn layout_symbol(
     elem: &Packed<SymbolElem>,
     ctx: &mut TermMathContext,
@@ -65,26 +67,50 @@ pub fn layout_symbol(
         return Ok(());
     }
 
-    // Retrieve current display size so we can set limits for large operators.
-    let is_display = styles
-        .get(EquationElem::size) == MathSize::Display;
+    let is_display = styles.get(EquationElem::size) == MathSize::Display;
 
     for ch in text.chars() {
         let class = unicode_math_class::class(ch).unwrap_or(MathClass::Normal);
 
-        // Single-character frame.
-        let s = EcoString::from(ch.to_string());
-        let frame = TermFrame::text(s, ContentStyle::default());
-        let mut frag = TermMathFrameFragment::new(frame).with_class(class);
+        let fragment = if class == MathClass::Large && is_display {
+            large_op_fragment(ch, ctx)
+        } else {
+            let s = EcoString::from(ch.to_string());
+            let frame = TermFrame::text(s, ContentStyle::default());
+            TermMathFrameFragment::new(frame).with_class(class)
+        };
 
-        // Large operators in display mode use limits layout by default.
-        if class == MathClass::Large && is_display {
-            frag = frag.with_limits(TermLimits::Display);
-        }
-
-        ctx.push(frag);
+        ctx.push(fragment);
     }
     Ok(())
+}
+
+/// Build a composed large-operator fragment for display mode.
+///
+/// Returns a `TermMathFrameFragment` with `MathClass::Large` and
+/// `TermLimits::Display` so the attach system places limits above/below.
+fn large_op_fragment(ch: char, ctx: &TermMathContext) -> TermMathFrameFragment {
+    let mode = ctx.config.mode;
+    let frame = match ch {
+        // Sum: build composed Σ operator
+        '\u{2211}' => operators::build_sum_operator(mode, 1),
+        // Integral: build stretched ∫ operator
+        '\u{222B}' => operators::build_integral_operator(mode, 2),
+        // Product: build composed Π operator
+        '\u{220F}' => operators::build_prod_operator(mode),
+        // Coproduct: same layout as product
+        '\u{2210}' => operators::build_prod_operator(mode),
+        // Other large operators: fall back to single char
+        _ => {
+            let s = EcoString::from(ch.to_string());
+            return TermMathFrameFragment::new(TermFrame::text(s, ContentStyle::default()))
+                .with_class(MathClass::Large);
+        }
+    };
+
+    TermMathFrameFragment::new(frame)
+        .with_class(MathClass::Large)
+        .with_limits(TermLimits::Display)
 }
 
 // ── layout_op ─────────────────────────────────────────────────────────────────

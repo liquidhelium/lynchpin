@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+lynchpin-term-realize = { path = "../lynchpin-term-realize" }
 lynchpin-term-layout = { path = "../lynchpin-term-layout" }
 typst = { workspace = true }
 typst-eval = { workspace = true }

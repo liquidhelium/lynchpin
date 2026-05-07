@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+lynchpin-term-realize = { path = "../lynchpin-term-realize" }
 typst = { workspace = true }
 crossterm = "0.29"
 unicode-width = "0.2"

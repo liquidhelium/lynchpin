@@ -60,7 +60,7 @@ fn term_document_impl(
     let mut info = DocumentInfo::default();
 
     // Use our own terminal realize instead of the paged/HTML realize.
-    let children = crate::realize::realize_term(
+    let children = lynchpin_term_realize::realize_term(
         &mut engine,
         &arenas,
         &mut info,

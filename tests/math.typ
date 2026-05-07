@@ -8,6 +8,8 @@ $ (x + y) / (a - b) $
 
 Square root: $sqrt(x + 1)$ and $root(3, x^2)$.
 
+Big square root: $ sqrt(1+sqrt(1/2)) $
+
 Integral:
 
 $ integral_0^infinity e^(-x) dif x = 1 $

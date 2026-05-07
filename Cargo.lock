@@ -1834,6 +1834,7 @@ dependencies = [
  "ecow",
  "fontdb",
  "lynchpin-term-layout",
+ "lynchpin-term-realize",
  "rustc-hash",
  "tinymist-world",
  "typst",
@@ -1849,11 +1850,22 @@ dependencies = [
  "comemo",
  "crossterm",
  "ecow",
+ "lynchpin-term-realize",
  "rustc-hash",
  "smallvec",
  "typst",
  "unicode-math-class",
  "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "lynchpin-term-realize"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "comemo",
+ "ecow",
+ "typst",
 ]
 
 [[package]]
