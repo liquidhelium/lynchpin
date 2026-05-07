@@ -1823,6 +1823,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lynchpin"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "bumpalo",
+ "clap",
+ "comemo",
+ "crossterm",
+ "ecow",
+ "fontdb",
+ "rustc-hash",
+ "tinymist-world",
+ "typst",
+ "typst-eval",
+ "unicode-segmentation",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3788,25 +3807,6 @@ dependencies = [
  "siphasher",
  "thin-vec",
  "unicode-math-class",
-]
-
-[[package]]
-name = "typterm"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "bumpalo",
- "clap",
- "comemo",
- "crossterm",
- "ecow",
- "fontdb",
- "rustc-hash",
- "tinymist-world",
- "typst",
- "typst-eval",
- "unicode-segmentation",
- "unicode-width 0.2.2",
 ]
 
 [[package]]

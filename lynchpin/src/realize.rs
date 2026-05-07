@@ -114,7 +114,7 @@ struct GroupingRule {
     interrupt: fn(typst::foundations::Element) -> bool,
     /// Converts the accumulated `s.sink[start..]` slice into the grouped
     /// element and re-visits it.
-    finish: fn(Grouped) -> SourceResult<()>,
+    finish: fn(Grouped<'_,'_,'_,'_>) -> SourceResult<()>,
 }
 
 struct Grouping<'a> {

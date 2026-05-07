@@ -1,5 +1,5 @@
 [workspace]
-members = ["typterm"]
+members = ["lynchpin"]
 resolver = "3"
 [workspace.dependencies]
 typst = "0.14"
