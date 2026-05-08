@@ -35,6 +35,14 @@ use typst::text::{HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawE
     WeightDelta};
 use typst::utils::SliceExt;
 
+
+// ── RealizationKind ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TermRealizationKind {
+    Document,
+    Math,
+}
 // ── Public entry ─────────────────────────────────────────────────────────────
 
 /// Realize content for terminal output.
@@ -51,11 +59,13 @@ pub fn realize_term<'a>(
     info: &mut DocumentInfo,
     content: &'a Content,
     styles: StyleChain<'a>,
+    kind: TermRealizationKind,
 ) -> SourceResult<Vec<Pair<'a>>> {
     let mut s = State {
         engine,
         arenas,
         info,
+        kind,
         sink: vec![],
         groupings: ArrayVec::new(),
         may_attach: false,
@@ -80,6 +90,7 @@ struct State<'a, 'x, 'y> {
     engine: &'x mut Engine<'y>,
     arenas: &'a Arenas,
     info: &'x mut DocumentInfo,
+    kind: TermRealizationKind,
     /// Flat output of realized `(content, styles)` pairs.
     sink: Vec<Pair<'a>>,
     /// Currently active groupings (max `MAX_GROUP_NESTING` deep).
@@ -194,18 +205,20 @@ fn visit<'a>(
 
     // Transparently wrap mathy content in an EquationElem so that user show
     // rules targeting `equation` work correctly.
-    if content.can::<dyn Mathy>() && !content.is::<EquationElem>() {
-        let eq = EquationElem::new(content.clone()).pack().spanned(content.span());
-        visit(s, s.store(eq), styles)?;
-        return Ok(());
-    }
 
-    // Convert SymbolElem → TextElem so that downstream does not need to know
-    // about the symbol element type.
-    if let Some(sym) = content.to_packed::<typst::foundations::SymbolElem>() {
-        let text = TextElem::packed(sym.text.clone()).spanned(sym.span());
-        visit(s, s.store(text), styles)?;
-        return Ok(());
+    // Math mode: keep SymbolElem as-is (don't convert to TextElem).
+    // Document mode: wrap Mathy in EquationElem, convert SymbolElem -> TextElem.
+    if s.kind != TermRealizationKind::Math {
+        if content.can::<dyn Mathy>() && !content.is::<EquationElem>() {
+            let eq = EquationElem::new(content.clone()).pack().spanned(content.span());
+            visit(s, s.store(eq), styles)?;
+            return Ok(());
+        }
+        if let Some(sym) = content.to_packed::<typst::foundations::SymbolElem>() {
+            let text = TextElem::packed(sym.text.clone()).spanned(sym.span());
+            visit(s, s.store(text), styles)?;
+            return Ok(());
+        }
     }
 
     // Apply built-in terminal show rules for simple inline-styling elements.
@@ -425,7 +438,7 @@ fn visit_grouping_rules<'a>(
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
-    let matching = TERM_RULES.iter().find(|r| (r.trigger)(content));
+    let matching = rules_for(s.kind).iter().find(|r| (r.trigger)(content));
 
     let mut i = 0;
     while let Some(active) = s.groupings.last() {
@@ -589,7 +602,15 @@ fn finish_innermost_grouping(s: &mut State) -> SourceResult<()> {
 
 const MAX_GROUP_NESTING: usize = 3;
 
-static TERM_RULES: &[&GroupingRule] = &[&PAR, &LIST, &ENUM, &TERMS];
+static TERM_DOCUMENT_RULES: &[&GroupingRule] = &[&PAR, &LIST, &ENUM, &TERMS];
+static TERM_MATH_RULES: &[&GroupingRule] = &[&LIST, &ENUM, &TERMS];
+
+fn rules_for(kind: TermRealizationKind) -> &'static [&'static GroupingRule] {
+    match kind {
+        TermRealizationKind::Document => TERM_DOCUMENT_RULES,
+        TermRealizationKind::Math => TERM_MATH_RULES,
+    }
+}
 
 /// Groups consecutive inline-level elements into a `ParElem`.
 static PAR: GroupingRule = GroupingRule {

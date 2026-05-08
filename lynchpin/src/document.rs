@@ -10,6 +10,7 @@ use typst::{
     routines::Arenas,
 };
 
+use lynchpin_term_realize::TermRealizationKind;
 use lynchpin_term_layout::config::TermConfig;
 use lynchpin_term_layout::flow::layout_document;
 
@@ -66,6 +67,7 @@ fn term_document_impl(
         &mut info,
         content,
         styles,
+        TermRealizationKind::Document,
     )?;
 
     let config = TermConfig::default();

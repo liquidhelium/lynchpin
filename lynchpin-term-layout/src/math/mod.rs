@@ -26,7 +26,8 @@ use crossterm::style::ContentStyle;
 use ecow::EcoString;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::{Content, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem};
+use typst::foundations::{Content, ContextElem, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem};
+use typst::layout::HideElem;
 use typst::layout::{BoxElem, HElem};
 use typst::math::{
     AccentElem, AlignPointElem, AttachElem, BinomElem, CancelElem, CasesElem, ClassElem,
@@ -37,6 +38,8 @@ use typst::math::{
 };
 use typst::text::{LinebreakElem, SpaceElem};
 use crate::config::TermConfig;
+use typst::routines::Arenas;
+use typst::model::DocumentInfo;
 use crate::frame::{TermFrame, TermSize};
 
 pub use self::fragment::{TermLimits, TermMathFragment, TermMathFrameFragment};
@@ -132,12 +135,29 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
 
     // ── Content dispatcher ────────────────────────────────────────────────────
 
-    /// Walk the content tree and dispatch each element to the appropriate
-    /// sub-module.
+    /// Realize content with TermRealizationKind::Math, then dispatch.
     ///
-    /// Uses direct tree traversal; `lynchpin_term_realize` is available
-    /// for realizing non-math content that may contain show rules.
+    /// This properly handles show rules, location assignment (needed for
+    /// ContextElem), and element preparation inside math formulas.
     pub fn layout_into_self(
+        &mut self,
+        content: &Content,
+        styles: StyleChain,
+    ) -> SourceResult<()> {
+        let arenas = Arenas::default();
+        let mut info = DocumentInfo::default();
+        let pairs = lynchpin_term_realize::realize_term(
+            self.engine, &arenas, &mut info, content, styles,
+            lynchpin_term_realize::TermRealizationKind::Math,
+        )?;
+        for (elem, pair_styles) in pairs {
+            self.dispatch_element(elem, pair_styles)?;
+        }
+        Ok(())
+    }
+
+    /// Walk the content tree directly (fallback, unused).
+    pub fn layout_into_self_direct(
         &mut self,
         content: &Content,
         styles: StyleChain,
@@ -375,6 +395,11 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             return Ok(());
         }
 
+        // Cherry-picked: HideElem -> skip; ContextElem -> evaluate via show rule
+        if content.is::<HideElem>() { return Ok(()); }
+        if content.is::<ContextElem>() {
+            return Ok(()); // skip — requires full realization for location assignment
+        }
 
         // ── Unknown: emit a placeholder fragment ──────────────────────────────
         let name = content.elem().name();

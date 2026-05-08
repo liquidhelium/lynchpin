@@ -55,3 +55,8 @@ $ 7.32 beta +
     (Q_i (a_i - epsilon)) / 2 $
 
 $ a >> b $
+
+// Style 3
+#import "@preview/physica:0.9.8"
+
+$ physica.curl (physica.grad f), physica.tensor(T, -mu, +nu), physica.pdv(f,x,y,[1,2]) $
