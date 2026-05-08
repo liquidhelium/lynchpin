@@ -22,9 +22,8 @@ use typst::foundations::{
     SequenceElem, ShowSet, StyleChain, StyledElem, Styles, Synthesize, Transformation,
 };
 use typst::foundations::{ContextElem, TargetElem};
-use typst::layout::HideElem;
 use typst::introspection::TagElem;
-use typst::layout::{AlignElem, BoxElem, HElem, InlineElem, VElem};
+use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
 use typst::math::{EquationElem, Mathy};
 use typst::model::{
     DocumentInfo, EmphElem, EnumElem, ListElem, ListItemLike, ListLike, ParElem,

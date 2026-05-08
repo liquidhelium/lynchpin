@@ -24,14 +24,32 @@ pub mod config;
 pub mod frame;
 pub mod math;
 
-pub mod stack;
-pub mod shapes;
-pub mod pad;
+pub mod flow;
+pub mod grid;
 pub mod inline;
 pub mod lists;
+pub mod pad;
+pub mod shapes;
+pub mod stack;
 pub mod transforms;
-pub mod grid;
-pub mod flow;
 
 // Re-export the primary output type.
 pub use flow::TermPage;
+use typst::{
+    foundations::{Resolve, StyleChain},
+    layout::{Length, Rel, Spacing},
+    text::TextElem,
+};
+
+pub fn to_length(length: &Rel<Length>, styles: StyleChain) -> usize {
+    let font_size = styles.get(TextElem::size).0;
+    (length.relative_to(font_size).resolve(styles) / font_size.resolve(styles)).round() as usize
+}
+
+pub fn eval_spacing(styles: StyleChain<'_>, s: &Spacing) -> usize {
+    let rows = match s {
+        Spacing::Rel(r) => to_length(r, styles),
+        Spacing::Fr(_) => 1,
+    };
+    rows
+}

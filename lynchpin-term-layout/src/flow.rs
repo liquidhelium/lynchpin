@@ -31,12 +31,15 @@
 //!
 //! Blocks are separated by a 1-row gap.
 
+use comemo::Track;
 use crossterm::style::{Attribute, Color, ContentStyle};
 use typst::__warning;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
-use typst::layout::{BlockBody, BlockElem, BoxElem, GridElem, HElem, HideElem, PagebreakElem, VElem};
+use typst::layout::{
+    BlockBody, BlockElem, BoxElem, GridElem, HElem, HideElem, LayoutElem, PagebreakElem, StackChild, StackElem, VElem,
+};
 use typst::math::EquationElem;
 use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TableElem, TermsElem};
 use typst::routines::Pair;
@@ -44,10 +47,11 @@ use typst::text::{LinebreakElem, RawContent, RawElem, RawLine, SpaceElem, TextEl
 
 use crate::config::TermConfig;
 use crate::frame::{Row, TermFrame, TermSize};
-use crate::inline::layout_paragraph;
 use crate::grid::{layout_grid, layout_table};
+use crate::inline::layout_paragraph;
 use crate::lists::{render_enum_item, render_list_item, render_term_item};
-use crate::stack::compose_vertical;
+use crate::stack::{compose_horizontal, compose_vertical};
+use crate::eval_spacing;
 
 // ── TermPage ──────────────────────────────────────────────────────────────────
 
@@ -64,16 +68,20 @@ pub struct TermPage {
 
 /// Mutable state threaded through the recursive block handler.
 struct FlowState<'cfg> {
-    config:       &'cfg TermConfig,
+    config: &'cfg TermConfig,
     /// Accumulated block frames (not yet composed).
-    blocks:       Vec<TermFrame>,
+    blocks: Vec<TermFrame>,
     /// Current enumeration counter (reset when a new `EnumElem` starts).
     enum_counter: u64,
 }
 
 impl<'cfg> FlowState<'cfg> {
     fn new(config: &'cfg TermConfig) -> Self {
-        Self { config, blocks: Vec::new(), enum_counter: 1 }
+        Self {
+            config,
+            blocks: Vec::new(),
+            enum_counter: 1,
+        }
     }
 
     /// Push a block frame.  Empty frames are silently dropped.
@@ -135,14 +143,17 @@ fn handle_block(
         for c in &seq.children {
             handle_block(state, engine, c, styles)?;
         }
-
     } else if let Some(s) = child.to_packed::<StyledElem>() {
         handle_block(state, engine, &s.child, styles.chain(&s.styles))?;
 
     // ── Paragraph ─────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<ParElem>() {
         let frame = layout_paragraph(
-            engine, &elem.body, state.config, styles, ContentStyle::default(),
+            engine,
+            &elem.body,
+            state.config,
+            styles,
+            ContentStyle::default(),
         )?;
         state.push(frame);
 
@@ -174,8 +185,12 @@ fn handle_block(
         for item in &elem.children {
             let number = item.number.get(styles);
             let f = render_enum_item(
-                engine, number, &mut state.enum_counter,
-                &item.body, state.config, styles,
+                engine,
+                number,
+                &mut state.enum_counter,
+                &item.body,
+                state.config,
+                styles,
             )?;
             item_frames.push(f);
         }
@@ -187,9 +202,7 @@ fn handle_block(
     } else if let Some(elem) = child.to_packed::<TermsElem>() {
         let mut item_frames = Vec::with_capacity(elem.children.len());
         for item in &elem.children {
-            let f = render_term_item(
-                engine, &item.term, &item.description, state.config, styles,
-            )?;
+            let f = render_term_item(engine, &item.term, &item.description, state.config, styles)?;
             item_frames.push(f);
         }
         if !item_frames.is_empty() {
@@ -202,7 +215,6 @@ fn handle_block(
         // A RawLine arriving directly (e.g. from a user show rule).
         let f = layout_raw_line(engine, &elem.body, state.config, styles)?;
         state.push(f);
-
     } else if let Some(elem) = child.to_packed::<RawElem>() {
         let is_block = elem.block.get(styles);
         let lines = elem.lines.as_deref().unwrap_or_default();
@@ -247,7 +259,9 @@ fn handle_block(
             let composed = compose_vertical(tmp.blocks, 1, 0);
             if composed.rows() > 0 {
                 // Push directly (bypasses is_empty check) to keep the space.
-                state.blocks.push(TermFrame::new(TermSize::new(0, composed.rows())));
+                state
+                    .blocks
+                    .push(TermFrame::new(TermSize::new(0, composed.rows())));
             }
         }
 
@@ -257,7 +271,6 @@ fn handle_block(
             handle_block(state, engine, body, styles)?;
         }
         // BlockBody::MultiLayouter / SingleLayouter → skip (not applicable to terminal)
-
     } else if let Some(elem) = child.to_packed::<BoxElem>() {
         if let Some(body) = elem.body.get_ref(styles) {
             handle_block(state, engine, body, styles)?;
@@ -266,41 +279,42 @@ fn handle_block(
     // ── Block equations ───────────────────────────────────────────────────────
     } else if let Some(eq) = child.to_packed::<EquationElem>() {
         if eq.block.get(styles) {
-            let frame = crate::math::layout_equation_block(
-                eq, engine, state.config, styles,
-            )?;
+            let frame = crate::math::layout_equation_block(eq, engine, state.config, styles)?;
             state.push(frame);
         } else {
             // Inline equation separated from its paragraph by realize_term.
             // Render as inline math block (left-aligned, no paragraph wrapping).
-            let frame = crate::math::layout_equation_inline(
-                eq, engine, state.config, styles,
-            )?;
+            let frame = crate::math::layout_equation_inline(eq, engine, state.config, styles)?;
             state.push(frame);
         }
 
     // ── Spacing ───────────────────────────────────────────────────────────────
     } else if child.is::<SpaceElem>() {
         // Horizontal space has no block-level meaning; skip.
-
-    } else if child.is::<LinebreakElem>() || child.is::<ParbreakElem>() {
+    } else if child.is::<ParbreakElem>() {
         // Insert a visual blank row to separate adjacent blocks.
         state.push_blank(1);
+    } else if child.is::<LinebreakElem>() {
 
     } else if child.is::<HElem>() {
         // Horizontal spacing at block level: skip.
-
-    } else if child.is::<VElem>() {
+    } else if let Some(v) = child.to_packed::<VElem>() {
         // Vertical spacing: insert a blank row.
-        state.push_blank(1);
+        state.push_blank(eval_spacing(styles, &v.amount) as i32);
 
     // ── Page break ───────────────────────────────────────────────────────────
     } else if child.is::<PagebreakElem>() {
         // Render as a horizontal separator line.
         let width = state.config.width.unwrap_or(40);
-        let sep_char = if state.config.mode.is_unicode() { '─' } else { '-' };
+        let sep_char = if state.config.mode.is_unicode() {
+            '─'
+        } else {
+            '-'
+        };
         let sep = TermFrame::text(
-            std::iter::repeat(sep_char).take(width as usize).collect::<String>(),
+            std::iter::repeat(sep_char)
+                .take(width as usize)
+                .collect::<String>(),
             ContentStyle::default(),
         );
         state.push(sep);
@@ -308,22 +322,89 @@ fn handle_block(
     // ── TextElem at block level (bare text outside a paragraph) ──────────────
     } else if let Some(_elem) = child.to_packed::<TextElem>() {
         // Rare after realize_term, but handle gracefully.
-        let frame = layout_paragraph(
-            engine, child, state.config, styles, ContentStyle::default(),
-        )?;
+        let frame = layout_paragraph(engine, child, state.config, styles, ContentStyle::default())?;
         state.push(frame);
 
-    // ── Grid / Table (stub) ──────────────────────────────────────────────────
+    // ── Grid / Table ──────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<GridElem>() {
         let frame = layout_grid(elem, engine, state.config, styles)?;
         state.push(frame);
-
     } else if let Some(elem) = child.to_packed::<TableElem>() {
         let frame = layout_table(elem, engine, state.config, styles)?;
         state.push(frame);
 
+    // ── Layout ────────────────────────────────────────────────────────────────
+    // #layout(func) provides the outer container's dimensions.
+    } else if let Some(elem) = child.to_packed::<LayoutElem>() {
+        use typst::foundations::{Context, dict};
+        use typst::layout::Abs;
+        let width_cols = state.config.width.unwrap_or(80) as f64;
+        let width = Abs::pt(width_cols * 8.4);
+        let height = Abs::pt(1000.0);
+        let loc = child.location();
+        let context = Context::new(loc, Some(styles));
+        let result = elem
+            .func
+            .call(
+                engine,
+                context.track(),
+                [dict! { "width" => width, "height" => height }],
+            )?
+            .display();
+        handle_block(state, engine, &result, styles)?;
+
+    // ── Stack ────────────────────────────────────────────────────────────────
+    } else if let Some(elem) = child.to_packed::<StackElem>() {
+        let dir = elem.dir.get(styles);
+        let mut frames: Vec<TermFrame> = Vec::new();
+        let reversed = !dir.is_positive();
+        let var_name: Box<dyn Iterator<Item = _>> = if reversed {
+            Box::new(elem.children.iter().rev())
+        } else {
+            Box::new(elem.children.iter())
+        };
+        for c in var_name {
+            match c {
+                StackChild::Block(content) => {
+                    let mut tmp = FlowState::new(state.config);
+                    handle_block(&mut tmp, engine, content, styles)?;
+                    if !tmp.blocks.is_empty() {
+                        frames.push(compose_vertical(tmp.blocks, 0, 0));
+                    }
+                }
+                StackChild::Spacing(s) => {
+                    let rows = eval_spacing(styles, s);
+                    if !frames.is_empty() {
+                        frames.push(TermFrame::new(TermSize::new(0, dbg!(rows as i32))));
+                    }
+                }
+            }
+        }
+        if !frames.is_empty() {
+            let horiz = dir.axis() == typst::layout::Axis::X;
+            let frame = if horiz {
+                compose_horizontal(frames, 0)
+            } else {
+                compose_vertical(frames, 0, 0)
+            };
+            state.push(frame);
+        }
+    }
+    // ── Place ────────────────────────────────────────────────────────────────
+    // else if let Some(elem) = child.to_packed::<PlaceElem>() {
+    //     let mut tmp = FlowState::new(state.config);
+    //     handle_block(&mut tmp, engine, &elem.body, styles)?;
+    //     if !tmp.blocks.is_empty() {
+    //         let body = compose_vertical(tmp.blocks, 1, 0);
+    //         let max_w = state.config.width.unwrap_or(body.cols() as i32) as Col;
+    //         let cx = ((max_w - body.cols()).max(0)) / 2;
+    //         let mut frame = TermFrame::new(TermSize::new(max_w, body.rows()));
+    //         frame.push_frame(TermPoint::new(cx, 0), body);
+    //         state.blocks.push(frame);
+    //     }
+    // }
     // ── Unknown ───────────────────────────────────────────────────────────────
-    } else {
+    else {
         engine.sink.warn(__warning!(
             child.span(),
             "{} was ignored during terminal layout",
@@ -367,7 +448,8 @@ pub fn layout_document<'a>(
             let mut j = i + 1;
             while j < pairs.len() {
                 let (nchild, nstyles) = &pairs[j];
-                let is_inline_eq = nchild.to_packed::<EquationElem>()
+                let is_inline_eq = nchild
+                    .to_packed::<EquationElem>()
                     .is_some_and(|eq| !eq.block.get(*nstyles));
                 let is_par = nchild.to_packed::<ParElem>().is_some();
                 if is_inline_eq || is_par {
