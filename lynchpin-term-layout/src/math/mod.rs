@@ -401,7 +401,23 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             return Ok(()); // skip — requires full realization for location assignment
         }
 
-        // ── Unknown: emit a placeholder fragment ──────────────────────────────
+        // ── Unknown: try to recurse, then emit placeholder ──────────────────
+        if let Some(seq) = content.to_packed::<SequenceElem>() {
+            for ch in &seq.children { self.dispatch_element(ch, styles)?; }
+            return Ok(());
+        }
+        if let Some(s) = content.to_packed::<StyledElem>() {
+            self.dispatch_element(&s.child, styles.chain(&s.styles))?;
+            return Ok(());
+        }
+        if let Some(eq) = content.to_packed::<EquationElem>() {
+            let nested = eq.block.get(styles);
+            let size_style = if nested { EquationElem::size.set(MathSize::Display).wrap() }
+                                 else { EquationElem::size.set(MathSize::Text).wrap() };
+            self.dispatch_element(&eq.body, styles.chain(&size_style))?;
+            return Ok(());
+        }
+        // Still unknown — show placeholder
         let name = content.elem().name();
         let placeholder = EcoString::from(format!("[{name}]"));
         let frame = TermFrame::text(placeholder, ContentStyle::default());

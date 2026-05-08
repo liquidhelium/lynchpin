@@ -480,7 +480,7 @@ fn visit_filter_rules<'a>(
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
-    if content.is::<SpaceElem>() {
+    if s.kind == TermRealizationKind::Document && content.is::<SpaceElem>() {
         // Spaces outside paragraphs are meaningless at the document level.
         return Ok(true);
     }
