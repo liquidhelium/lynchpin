@@ -36,7 +36,7 @@ use typst::__warning;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
-use typst::layout::{BlockBody, BlockElem, BoxElem, HElem, PagebreakElem, VElem};
+use typst::layout::{BlockBody, BlockElem, BoxElem, HElem, HideElem, PagebreakElem, VElem};
 use typst::math::EquationElem;
 use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TermsElem};
 use typst::routines::Pair;
@@ -234,6 +234,20 @@ fn handle_block(
             let mut style = ContentStyle::default();
             style.foreground_color = Some(Color::DarkGrey);
             state.push(TermFrame::text(text, style));
+        }
+
+    // ── Hide ──────────────────────────────────────────────────────────────────
+    } else if let Some(elem) = child.to_packed::<HideElem>() {
+        // Measure the body by routing it through a temporary FlowState, then
+        // emit a blank frame of the same height so the space is preserved.
+        let mut tmp = FlowState::new(state.config);
+        handle_block(&mut tmp, engine, &elem.body, styles)?;
+        if !tmp.blocks.is_empty() {
+            let composed = compose_vertical(tmp.blocks, 1, 0);
+            if composed.rows() > 0 {
+                // Push directly (bypasses is_empty check) to keep the space.
+                state.blocks.push(TermFrame::new(TermSize::new(0, composed.rows())));
+            }
         }
 
     // ── Block / box containers ────────────────────────────────────────────────

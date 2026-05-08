@@ -31,7 +31,7 @@ use ecow::EcoString;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
-use typst::layout::{BoxElem, HElem};
+use typst::layout::{BoxElem, HElem, HideElem};
 use typst::math::EquationElem;
 use typst::model::{EmphElem, StrongElem};
 use typst::text::{DecoLine, HighlightElem, LinebreakElem, OverlineElem, SpaceElem,
@@ -182,6 +182,17 @@ fn collect_items(
         // Block equations inside inline context: skip.
 
     // ── Layout containers ─────────────────────────────────────────────────────
+    } else if let Some(elem) = content.to_packed::<HideElem>() {
+        // Measure the body to get its display width, then emit equivalent
+        // blank space so the hidden content still occupies the right amount
+        // of columns.
+        let mut hidden: Vec<InlineItem> = Vec::new();
+        collect_items(&elem.body, styles, base_style, &mut hidden, engine, config);
+        let width: Col = hidden.iter().map(|i| i.width()).sum();
+        if width > 0 {
+            items.push(InlineItem::Space(width));
+        }
+
     } else if let Some(elem) = content.to_packed::<BoxElem>() {
         if let Some(body) = elem.body.get_ref(styles) {
             collect_items(body, styles, base_style, items, engine, config);

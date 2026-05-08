@@ -225,6 +225,21 @@ fn visit<'a>(
         }
     }
 
+    // Evaluate ContextElem: apply the built-in show rule to resolve the context
+    // closure.  This is handled here (after user show rules and transparent
+    // unwrapping, but before grouping) so that #context works everywhere —
+    // not just inside math.  If the built-in rule is absent (should never
+    // happen in practice) we simply discard the element to avoid pushing an
+    // unevaluated ContextElem into the layout stage.
+    if content.is::<ContextElem>() {
+        let target = styles.get(TargetElem::target);
+        if let Some(rule) = s.engine.routines.rules.get(target, content) {
+            let result = rule.apply(content, s.engine, styles)?;
+            visit(s, s.store(result), styles)?;
+        }
+        return Ok(());
+    }
+
     // Apply built-in terminal show rules for simple inline-styling elements.
     // These rules mirror what the paged target does: transform the element into
     // its body with the relevant TextElem style field set, so that `convert.rs`
@@ -480,17 +495,6 @@ fn visit_grouping_rules<'a>(
         return Ok(true);
     }
 
-    // Cherry-picked built-in: ContextElem
-    if content.is::<ContextElem>() {
-        let target = styles.get(TargetElem::target);
-        if let Some(rule) = s.engine.routines.rules.get(target, content) {
-            let result = rule.apply(content, s.engine, styles)?;
-            visit(s, s.store(result), styles)?;
-            return Ok(true);
-        }
-    }
-    // Cherry-picked built-in: HideElem
-    if content.is::<HideElem>() { return Ok(true); }
     Ok(false)
 }
 
@@ -569,17 +573,6 @@ fn visit_term_rules<'a>(
         return Ok(true);
     }
 
-    // Cherry-picked built-in: ContextElem
-    if content.is::<ContextElem>() {
-        let target = styles.get(TargetElem::target);
-        if let Some(rule) = s.engine.routines.rules.get(target, content) {
-            let result = rule.apply(content, s.engine, styles)?;
-            visit(s, s.store(result), styles)?;
-            return Ok(true);
-        }
-    }
-    // Cherry-picked built-in: HideElem
-    if content.is::<HideElem>() { return Ok(true); }
     Ok(false)
 }
 
@@ -682,6 +675,9 @@ static PAR: GroupingRule = GroupingRule {
             || (e == EquationElem::ELEM
                 && content.to_packed::<EquationElem>()
                     .is_some_and(|eq| eq.block.as_option() != &Some(true)))
+            // HideElem is treated as inline so that #hide[text] in a paragraph
+            // stays inside the paragraph (preserving horizontal space).
+            || e == HideElem::ELEM
     },
     inner: |content| content.elem() == SpaceElem::ELEM,
     interrupt: |elem| elem == ParElem::ELEM || elem == AlignElem::ELEM,

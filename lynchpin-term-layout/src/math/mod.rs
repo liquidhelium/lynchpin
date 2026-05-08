@@ -395,8 +395,16 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             return Ok(());
         }
 
-        // Cherry-picked: HideElem -> skip; ContextElem -> evaluate via show rule
-        if content.is::<HideElem>() { return Ok(()); }
+        // HideElem -> measure body size and push an empty frame of the same
+        // dimensions so the hidden content still occupies the right space.
+        if let Some(elem) = content.to_packed::<HideElem>() {
+            let frame = self.layout_into_frame(&elem.body, styles)?;
+            if !frame.size().is_empty() {
+                let blank = TermFrame::new(frame.size());
+                self.push(TermMathFrameFragment::new(blank));
+            }
+            return Ok(());
+        }
 
 
         // ── Unknown: try to recurse, then emit placeholder ──────────────────
