@@ -35,4 +35,14 @@ $ cases("1", "2","1", "2","1", "2","1",#[$1/2/3/4$1234],delim: "[") $
 $ forall n in NN, exists m, m = n + 1 $
 
 $ m n p $
-$ H stretch(=)^"define" U + p V $
+$ H attach(limits(stretch(=,)),t: "12345") U + p V $
+$ H attach(limits(stretch(=,size:#150%)),t: "中文测试") U + p V $
+$ H attach(limits(stretch(<=>,size:#150%)),t: "中文测试") U + p V $
+$ H attach(limits(stretch(<->,size:#150%)),t: "中文测试") U + p V $
+$ underline(1 + 2 + ... + 5) $
+$ underbrace(0 + 1 + dots.c + n, n + 1 "numbers") $
+$ overbrace(0 + 1 + dots.c + n, n + 1 "numbers") $
+$ underbracket(0 + 1 + dots.c + n, n + 1 "numbers") $
+$ overbracket(0 + 1 + dots.c + n, n + 1 "numbers") $
+$ underparen(0 + 1 + dots.c + n, n + 1 "numbers") $
+$ undershell(0 + 1 + dots.c + n, n + 1 "numbers") $

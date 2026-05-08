@@ -7,11 +7,12 @@ use crossterm::style::ContentStyle;
 use typst::diag::SourceResult;
 use typst::foundations::{Content, Packed, StyleChain};
 use typst::math::{
-    OverbraceElem, OverbracketElem, OverlineElem, OverparenElem, OvershellElem,
-    UnderbraceElem, UnderbracketElem, UnderlineElem, UnderparenElem, UndershellElem,
+    OverbraceElem, OverbracketElem, OverlineElem, OverparenElem, OvershellElem, UnderbraceElem,
+    UnderbracketElem, UnderlineElem, UnderparenElem, UndershellElem,
 };
 
-use crate::frame::{TermFrame, TermPoint, TermSize};
+use crate::config::RenderMode;
+use crate::frame::{Col, TermFrame, TermPoint, TermSize};
 use crate::stack::compose_vertical;
 
 use super::{TermMathContext, TermMathFrameFragment};
@@ -83,202 +84,315 @@ fn build_overline(ctx: &TermMathContext, body: TermFrame) -> TermMathFrameFragme
 
     let mut frame = TermFrame::new(TermSize::new(total_cols, total_rows));
     frame.set_baseline(1 + body_baseline);
-    frame.hline(TermPoint::ZERO, total_cols, ctx.config.mode.hbar(), ContentStyle::default());
+    frame.hline(
+        TermPoint::ZERO,
+        total_cols,
+        ctx.config.mode.hbar(),
+        ContentStyle::default(),
+    );
     frame.push_frame(TermPoint::new(0, 1), body);
     TermMathFrameFragment::new(frame)
 }
 
 // ── Underbrace / overbrace ────────────────────────────────────────────────────
 
-/// Layout an [`UnderbraceElem`]: body / brace-row / optional-annotation.
 pub fn layout_underbrace(
     elem: &Packed<UnderbraceElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_under_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.underbrace_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r, c) = underbrace_parts(ctx.config.mode);
+    let deco = build_hdeco_center(w, l, m, r, Some(c));
+    stack_deco_below(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-/// Layout an [`OverbraceElem`]: optional-annotation / brace-row / body.
 pub fn layout_overbrace(
     elem: &Packed<OverbraceElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_over_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.overbrace_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r, c) = overbrace_parts(ctx.config.mode);
+    let deco = build_hdeco_center(w, l, m, r, Some(c));
+    stack_deco_above(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-// ── Underbracket / overbracket ────────────────────────────────────────────────
-
-/// Layout an [`UnderbracketElem`].
 pub fn layout_underbracket(
     elem: &Packed<UnderbracketElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_under_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.underbracket_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r) = underbracket_parts(ctx.config.mode);
+    let deco = build_hdeco(w, l, m, r);
+    stack_deco_below(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-/// Layout an [`OverbracketElem`].
 pub fn layout_overbracket(
     elem: &Packed<OverbracketElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_over_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.overbracket_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r) = overbracket_parts(ctx.config.mode);
+    let deco = build_hdeco(w, l, m, r);
+    stack_deco_above(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-// ── Underparen / overparen ────────────────────────────────────────────────────
-
-/// Layout an [`UnderparenElem`].
 pub fn layout_underparen(
     elem: &Packed<UnderparenElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_under_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.underparen_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r) = underparen_parts(ctx.config.mode);
+    let deco = build_hdeco(w, l, m, r);
+    stack_deco_below(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-/// Layout an [`OverparenElem`].
 pub fn layout_overparen(
     elem: &Packed<OverparenElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_over_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.overparen_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r) = overparen_parts(ctx.config.mode);
+    let deco = build_hdeco(w, l, m, r);
+    stack_deco_above(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-// ── Undershell / overshell ────────────────────────────────────────────────────
-
-/// Layout an [`UndershellElem`].
 pub fn layout_undershell(
     elem: &Packed<UndershellElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_under_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.undershell_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r) = undershell_parts(ctx.config.mode);
+    let deco = build_hdeco(w, l, m, r);
+    stack_deco_below(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-/// Layout an [`OvershellElem`].
 pub fn layout_overshell(
     elem: &Packed<OvershellElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    layout_over_deco(
-        &elem.body,
-        elem.annotation.get_ref(styles).as_ref(),
-        ctx.config.mode.overshell_char(),
+    let body = ctx.layout_into_frame(&elem.body, styles)?;
+    let w = body.cols().max(1);
+    let (l, m, r) = overshell_parts(ctx.config.mode);
+    let deco = build_hdeco(w, l, m, r);
+    stack_deco_above(
         ctx,
+        body,
+        deco,
+        elem.annotation.get_ref(styles).as_ref(),
         styles,
     )
 }
 
-// ── Generic helpers ───────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Build an under-decoration: `body / deco-row / annotation?`
-///
-/// The fragment's baseline matches the body's baseline, so the body sits on
-/// the math axis and the decoration hangs below.
-fn layout_under_deco(
-    body_content: &Content,
-    annotation: Option<&Content>,
-    deco_char: char,
+fn build_hdeco(width: Col,left: char,mid: char,right: char) -> TermFrame {
+    build_hdeco_center(width, left, mid, right, None)
+}
+fn build_hdeco_center(width: Col, left: char, mid: char, right: char, center: Option<char>) -> TermFrame {
+    let w = width.max(1);
+    let mut f = TermFrame::new(TermSize::new(w, 1));
+    if w == 1 {
+        f.push_text(
+            TermPoint::new(0, 0),
+            mid.to_string(),
+            ContentStyle::default(),
+        );
+    } else {
+        f.push_text(
+            TermPoint::new(0, 0),
+            left.to_string(),
+            ContentStyle::default(),
+        );
+        if w >= 3
+            && let Some(center) = center
+        {
+            for x in 1..w / 2 {
+                f.push_text(
+                    TermPoint::new(x, 0),
+                    mid.to_string(),
+                    ContentStyle::default(),
+                );
+            }
+            f.push_text(
+                TermPoint::new(w / 2, 0),
+                center.to_string(),
+                ContentStyle::default(),
+            );
+            for x in (w / 2 + 1)..w - 1 {
+                f.push_text(
+                    TermPoint::new(x, 0),
+                    mid.to_string(),
+                    ContentStyle::default(),
+                );
+            }
+        } else {
+            for x in 1..w - 1 {
+                f.push_text(
+                    TermPoint::new(x, 0),
+                    mid.to_string(),
+                    ContentStyle::default(),
+                );
+            }
+        }
+        f.push_text(
+            TermPoint::new(w - 1, 0),
+            right.to_string(),
+            ContentStyle::default(),
+        );
+    }
+    f
+}
+
+fn stack_deco_below(
     ctx: &mut TermMathContext,
+    body: TermFrame,
+    deco: TermFrame,
+    ann: Option<&Content>,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    let body = ctx.layout_into_frame(body_content, styles)?;
-    let body_cols = body.cols().max(1);
-
-    // Decoration row: fill body width with the decoration character.
-    let mut deco_frame = TermFrame::new(TermSize::new(body_cols, 1));
-    deco_frame.hline(TermPoint::ZERO, body_cols, deco_char, ContentStyle::default());
-
-    // Stack: [body, deco, annotation?].
-    // baseline_idx = 0 → overall baseline = body.baseline().
-    let mut frames = vec![body, deco_frame];
-    if let Some(ann_content) = annotation {
-        let ann = ctx.layout_into_frame(ann_content, styles)?;
-        frames.push(ann);
+    let mut frames = vec![body, deco];
+    if let Some(a) = ann {
+        frames.push(ctx.layout_into_frame(a, styles)?);
     }
-
-    let composed = compose_vertical(frames, 0, 0);
-    ctx.push(TermMathFrameFragment::new(composed));
+    ctx.push(TermMathFrameFragment::new(compose_vertical(frames, 0, 0)));
     Ok(())
 }
 
-/// Build an over-decoration: `annotation? / deco-row / body`
-///
-/// The fragment's baseline sits at `offset + body.baseline()`, where `offset`
-/// is the total height of the annotation (if any) plus the one-row decoration.
-fn layout_over_deco(
-    body_content: &Content,
-    annotation: Option<&Content>,
-    deco_char: char,
+fn stack_deco_above(
     ctx: &mut TermMathContext,
+    body: TermFrame,
+    deco: TermFrame,
+    ann: Option<&Content>,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    let body = ctx.layout_into_frame(body_content, styles)?;
-    let body_cols = body.cols().max(1);
-
-    // Decoration row.
-    let mut deco_frame = TermFrame::new(TermSize::new(body_cols, 1));
-    deco_frame.hline(TermPoint::ZERO, body_cols, deco_char, ContentStyle::default());
-
-    // Stack order (top → bottom): annotation? / deco / body.
-    // baseline_idx = index of body = frames.len() - 1.
     let mut frames: Vec<TermFrame> = Vec::new();
-    if let Some(ann_content) = annotation {
-        let ann = ctx.layout_into_frame(ann_content, styles)?;
-        frames.push(ann);
+    if let Some(a) = ann {
+        frames.push(ctx.layout_into_frame(a, styles)?);
     }
-    frames.push(deco_frame);
-    let body_idx = frames.len(); // index body will occupy after push
+    frames.push(deco);
+    let idx = frames.len();
     frames.push(body);
-
-    let composed = compose_vertical(frames, 0, body_idx);
-    ctx.push(TermMathFrameFragment::new(composed));
+    ctx.push(TermMathFrameFragment::new(compose_vertical(frames, 0, idx)));
     Ok(())
+}
+
+// ── Character maps ────────────────────────────────────────────────────────────
+// Unicode: proper bracket pieces (U+23A1–U+23AD).  ASCII: plain chars.
+
+fn u(mode: RenderMode) -> bool {
+    mode.is_unicode()
+}
+
+fn underbrace_parts(m: RenderMode) -> (char, char, char, char) {
+    if u(m) {
+        ('╰', '─', '╯', '🮦')
+    } else {
+        ('\\', '-', '/', 'v')
+    }
+}
+fn overbrace_parts(m: RenderMode) -> (char, char, char, char) {
+    if u(m) {
+        ('╭', '─', '╮', '🮧')
+    } else {
+        ('/', '-', '\\', '^')
+    }
+}
+fn underbracket_parts(m: RenderMode) -> (char, char, char) {
+    if u(m) {
+        ('└', '─', '┘')
+    } else {
+        ('[', '-', ']')
+    }
+}
+fn overbracket_parts(m: RenderMode) -> (char, char, char) {
+    if u(m) {
+        ('┌', '\u{2500}', '┐')
+    } else {
+        ('[', '-', ']')
+    }
+}
+fn underparen_parts(m: RenderMode) -> (char, char, char) {
+    if u(m) {
+        ('╰', '─', '╯',)
+    } else {
+        ('(', '-', ')')
+    }
+}
+fn overparen_parts(m: RenderMode) -> (char, char, char) {
+    if u(m) {
+        ('╭', '─', '╮')
+    } else {
+        ('(', '-', ')')
+    }
+}
+fn undershell_parts(m: RenderMode) -> (char, char, char) {
+    if u(m) {
+        ('🮡', '─', '🮠')
+    } else {
+        ('\\', '_', '/')
+    }
+}
+fn overshell_parts(m: RenderMode) -> (char, char, char) {
+    if u(m) {
+        ('🮣', '─', '🮢')
+    } else {
+        ('/', '_', '\\')
+    }
 }

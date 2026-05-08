@@ -17,7 +17,8 @@ use super::{TermMathContext, TermMathFragment, TermMathFrameFragment};
 
 use crate::config::RenderMode;
 use crate::frame::{Col, Row, TermFrame};
-use typst::foundations::{Content, Packed, StyleChain, SymbolElem};
+use typst::foundations::{Content, Packed, Resolve, StyleChain, SymbolElem};
+use typst::layout::{Length, Rel};
 
 // ── layout_lr ─────────────────────────────────────────────────────────────────
 
@@ -207,7 +208,7 @@ pub fn layout_stretch(
     let ch = extract_stretch_char(&elem.body);
     match ch {
         Some(c) => {
-            let w = body_content_width(&elem.body, ctx, styles)?.max(1);
+            let w = resolve_stretch_width(elem.size.get_cloned(styles), styles).max(1);
             let s = hstretch_char(c, w, ctx.config.mode);
             let frame = TermFrame::text(s, ContentStyle::default());
             ctx.push(TermMathFrameFragment::new(frame));
@@ -230,15 +231,18 @@ fn extract_stretch_char(content: &Content) -> Option<char> {
         })
 }
 
-fn body_content_width(
-    content: &Content,
-    ctx: &mut TermMathContext,
-    styles: StyleChain,
-) -> SourceResult<Col> {
-    Ok(ctx.layout_into_frame(content, styles)?.cols())
+fn resolve_stretch_width(size: Rel<Length>, styles: StyleChain) -> Col {
+    use typst::layout::Abs;
+    use typst::text::TextElem;
+    let font_size = styles.get(TextElem::size).resolve(styles);
+    // 1em = 1 terminal column (monospace approximation)
+    let col_width = font_size;
+    let rel: Rel<Abs> = size.resolve(styles);
+    let abs = rel.relative_to(col_width);
+    (abs.to_pt() / col_width.to_pt()).ceil().max(1.0) as Col
 }
 
-fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
+pub fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
     let w = width.max(1) as usize;
     match ch {
         // ── Right arrows ────────────────────────────────────────────────────
@@ -246,10 +250,11 @@ fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
         '⇒' => arrow_r(w, '═', '⇒', '=', '>', mode),
         // ── Left arrows ─────────────────────────────────────────────────────
         '←' => arrow_l(w, '←', '─', '<', '-', mode),
-        '⇐' => arrow_l(w, '⇐', '═', '<', '=', mode),
+        '⇐' => arrow_l(w, '<', '=', '<', '=', mode),
         // ── Bidirectional arrows ────────────────────────────────────────────
         '\u{2194}' => arrow_lr(w, '←', '─', '⟶', '<', '-', '>', mode),
-        '\u{21D4}' => arrow_lr(w, '⇔', '═', '⟶','<' ,'=', '>', mode),
+        // '\u{21D4}' => arrow_lr(w, '⇐', '═', '⇒','<' ,'=', '>', mode),
+        '\u{21D4}' => arrow_lr(w, '<', '=', '>','<' ,'=', '>', mode),
         // ── Horizontal braces ───────────────────────────────────────────────
         '\u{23DF}' => rep(mode.underbrace_char(), w),
         '\u{23DE}' => rep(mode.overbrace_char(), w),

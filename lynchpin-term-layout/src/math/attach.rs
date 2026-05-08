@@ -4,13 +4,14 @@
 //! [`LimitsElem`].
 
 use typst::diag::SourceResult;
-use typst::foundations::{Packed, StyleChain, SymbolElem};
-use typst::math::{AttachElem, LimitsElem, PrimesElem, ScriptsElem};
+use typst::foundations::{Content, Packed, Resolve, StyleChain, SymbolElem};
+use typst::math::{AttachElem, LimitsElem, PrimesElem, ScriptsElem, StretchElem};
 
 use crate::frame::{Col, Row, TermFrame, TermPoint, TermSize};
 use crate::stack::{compose_horizontal, compose_vertical};
 
 use super::{TermLimits, TermMathContext, TermMathFragment, TermMathFrameFragment};
+use crossterm::style::ContentStyle;
 use crate::pad;
 
 // ── layout_attach ─────────────────────────────────────────────────────────────
@@ -72,6 +73,31 @@ pub fn layout_attach(
         };
         (None, combined_br)
     };
+
+    // ── Horizontal stretch for stretch(=) inside limits ────────────────────
+    let mut base_frag = base_frag;
+    if let Some(stretch) = stretch_base(&elem.base, styles) {
+        let above_frame = above.as_ref().map(|c| ctx.layout_into_frame(c, styles)).transpose().ok().flatten();
+        let below_frame = below.as_ref().map(|c| ctx.layout_into_frame(c, styles)).transpose().ok().flatten();
+        let rel_w_cols = above_frame.as_ref().map(|f| f.cols())
+            .max(below_frame.as_ref().map(|f| f.cols()))
+            .unwrap_or(1);
+        // Convert rel_w_cols to Abs (1 col ≈ font size)
+        use typst::layout::Abs;
+        use typst::foundations::Resolve;
+        use typst::text::TextElem;
+        let font_size: Abs = styles.get(TextElem::size).resolve(styles);
+        let rel_w_abs = font_size * rel_w_cols as f64;
+        let target_abs = stretch.relative_to(rel_w_abs);
+        let cols = (target_abs.to_pt() / font_size.to_pt()).ceil().max(1.0) as Col;
+        let cols = cols.max(rel_w_cols);
+        if let Some(ch) = extract_stretch_base_char(&elem.base) {
+            use super::lr::hstretch_char;
+            let s = hstretch_char(ch, cols, ctx.config.mode);
+            let frame = TermFrame::text(s, ContentStyle::default());
+            base_frag = TermMathFrameFragment::new(frame).into();
+        }
+    }
 
     // ── Layout ───────────────────────────────────────────────────────────────
 
@@ -399,4 +425,46 @@ pub fn layout_limits(
 
 // ── Content sequence helper ───────────────────────────────────────────────────
 
-use typst::foundations::Content;
+
+
+// ── Horizontal stretch helpers ────────────────────────────────────────────────
+
+fn stretch_base(base: &Content, styles: StyleChain) -> Option<typst::layout::Rel<typst::layout::Abs>> {
+    let mut b = base;
+    // Unwrap transparent wrappers: LimitsElem, ScriptsElem, EquationElem
+    loop {
+        if let Some(eq) = b.to_packed::<typst::math::EquationElem>() {
+            b = &eq.body;
+        } else if let Some(lim) = b.to_packed::<LimitsElem>() {
+            b = &lim.body;
+        } else if let Some(scr) = b.to_packed::<ScriptsElem>() {
+            b = &scr.body;
+        } else {
+            break;
+        }
+    }
+    b.to_packed::<StretchElem>()
+        .map(|s| s.size.get_cloned(styles).resolve(styles))
+}
+
+fn extract_stretch_base_char(base: &Content) -> Option<char> {
+    let mut b = base;
+    loop {
+        if let Some(eq) = b.to_packed::<typst::math::EquationElem>() {
+            b = &eq.body;
+        } else if let Some(lim) = b.to_packed::<LimitsElem>() {
+            b = &lim.body;
+        } else if let Some(scr) = b.to_packed::<ScriptsElem>() {
+            b = &scr.body;
+        } else {
+            break;
+        }
+    }
+    b.to_packed::<StretchElem>()
+        .and_then(|s| s.body.to_packed::<SymbolElem>())
+        .and_then(|sym| {
+            let mut cs = sym.text.chars();
+            let c = cs.next()?;
+            cs.next().is_none().then_some(c)
+        })
+}
