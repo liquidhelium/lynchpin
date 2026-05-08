@@ -9,14 +9,15 @@
 
 use crossterm::style::ContentStyle;
 use typst::diag::SourceResult;
-use typst::foundations::{Packed, StyleChain};
 use typst::math::{LrElem, MidElem, StretchElem};
 use unicode_math_class::MathClass;
 
-use crate::frame::Row;
-
-use super::{TermMathContext, TermMathFragment, TermMathFrameFragment};
 use super::run::build_delimiter_frame;
+use super::{TermMathContext, TermMathFragment, TermMathFrameFragment};
+
+use crate::config::RenderMode;
+use crate::frame::{Col, Row, TermFrame};
+use typst::foundations::{Content, Packed, StyleChain, SymbolElem};
 
 // ── layout_lr ─────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,10 @@ pub fn layout_lr(
 
 /// Return `true` when `class` indicates that a fragment might be a delimiter.
 fn is_delimiter_class(class: MathClass) -> bool {
-    matches!(class, MathClass::Opening | MathClass::Closing | MathClass::Fence)
+    matches!(
+        class,
+        MathClass::Opening | MathClass::Closing | MathClass::Fence
+    )
 }
 
 /// Measure the tallest non-delimiter fragment inside the lr group.
@@ -114,8 +118,7 @@ fn try_stretch_delimiter(
     let new_frame = build_delimiter_frame(chars, ContentStyle::default());
     let new_rows = new_frame.rows();
     let baseline = new_rows / 2; // vertically centred baseline
-    let mut frame_frag = TermMathFrameFragment::new(new_frame)
-        .with_class(class);
+    let mut frame_frag = TermMathFrameFragment::new(new_frame).with_class(class);
     frame_frag.frame.set_baseline(baseline);
 
     *frag = TermMathFragment::Frame(frame_frag);
@@ -190,19 +193,102 @@ pub fn layout_mid(
     ctx.push(frag);
     Ok(())
 }
-
 // ── layout_stretch ────────────────────────────────────────────────────────────
 
 /// Layout a [`StretchElem`].
 ///
-/// For terminal rendering we cannot perform actual glyph stretching, so we
-/// simply lay out the body as-is.
+/// Known stretchable characters (arrows, braces, lines) are extended by
+/// repeating the glyph body.  Unknown characters pass through as-is.
 pub fn layout_stretch(
     elem: &Packed<StretchElem>,
     ctx: &mut TermMathContext,
     styles: StyleChain,
 ) -> SourceResult<()> {
-    let frag = ctx.layout_into_fragment(&elem.body, styles)?;
-    ctx.push(frag);
+    let ch = extract_stretch_char(&elem.body);
+    match ch {
+        Some(c) => {
+            let w = body_content_width(&elem.body, ctx, styles)?.max(1);
+            let s = hstretch_char(c, w, ctx.config.mode);
+            let frame = TermFrame::text(s, ContentStyle::default());
+            ctx.push(TermMathFrameFragment::new(frame));
+        }
+        None => {
+            let frag = ctx.layout_into_fragment(&elem.body, styles)?;
+            ctx.push(frag);
+        }
+    }
     Ok(())
+}
+
+fn extract_stretch_char(content: &Content) -> Option<char> {
+    content
+        .to_packed::<SymbolElem>()
+        .and_then(|sym| {
+            let mut cs = sym.text.chars();
+            let c = cs.next()?;
+            cs.next().is_none().then_some(c)
+        })
+}
+
+fn body_content_width(
+    content: &Content,
+    ctx: &mut TermMathContext,
+    styles: StyleChain,
+) -> SourceResult<Col> {
+    Ok(ctx.layout_into_frame(content, styles)?.cols())
+}
+
+fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
+    let w = width.max(1) as usize;
+    match ch {
+        // ── Right arrows ────────────────────────────────────────────────────
+        '→' => arrow_r(w, '─', '→', '-', '>', mode),
+        '⇒' => arrow_r(w, '═', '⇒', '=', '>', mode),
+        // ── Left arrows ─────────────────────────────────────────────────────
+        '←' => arrow_l(w, '←', '─', '<', '-', mode),
+        '⇐' => arrow_l(w, '⇐', '═', '<', '=', mode),
+        // ── Bidirectional arrows ────────────────────────────────────────────
+        '\u{2194}' => arrow_lr(w, '←', '─', '⟶', '<', '-', '>', mode),
+        '\u{21D4}' => arrow_lr(w, '⇔', '═', '⟶','<' ,'=', '>', mode),
+        // ── Horizontal braces ───────────────────────────────────────────────
+        '\u{23DF}' => rep(mode.underbrace_char(), w),
+        '\u{23DE}' => rep(mode.overbrace_char(), w),
+        // ── Horizontal lines ────────────────────────────────────────────────
+        '\u{2500}' | '\u{2015}' => rep(mode.hbar(), w),
+        // ── Fallback ────────────────────────────────────────────────────────
+        _ => rep(ch, w),
+    }
+}
+
+fn arrow_r(w: usize, uni_body: char, uni_head: char, ascii_body: char, ascii_head: char, mode: RenderMode) -> String {
+    if mode.is_unicode() {
+        // ─────→  (body line + arrow head, at least 1 col for head)
+        format!("{}{}", rep(uni_body, w.saturating_sub(1)), uni_head)
+    } else {
+        format!("{}{}", rep(ascii_body, w.saturating_sub(1)), ascii_head)
+    }
+}
+
+fn arrow_l(w: usize, uni_head: char, uni_body: char, ascii_head: char, ascii_body: char, mode: RenderMode) -> String {
+    if mode.is_unicode() {
+        // ←─────
+        format!("{}{}", uni_head, rep(uni_body, w.saturating_sub(1)))
+    } else {
+        format!("{}{}", ascii_head, rep(ascii_body, w.saturating_sub(1)))
+    }
+}
+
+fn arrow_lr(w: usize, uni_l: char, uni_body: char, uni_r: char, ascii_l: char, ascii_body: char, ascii_r: char, mode: RenderMode) -> String {
+    if mode.is_unicode() {
+
+        format!("{}{}{}", uni_l, rep(uni_body, w.saturating_sub(2)), uni_r)
+    } else {
+        format!("{}{}{}", ascii_l, rep(ascii_body, w.saturating_sub(2)), ascii_r)
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn rep(ch: char, n: usize) -> String {
+    std::iter::repeat(ch).take(n).collect()
 }

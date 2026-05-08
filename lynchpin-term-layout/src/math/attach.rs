@@ -292,29 +292,22 @@ fn build_post_scripts_with_ic(
 
 /// Assemble pre-frame + base + post-frame into a single frame, baseline-aligned.
 ///
-/// The base frame's baseline is padded if the pre/post frames have extra rows
-/// above the baseline, so that all three share the same effective baseline.
+/// Translates the base content vertically so its baseline aligns with
+/// pre/post, but does NOT add empty rows to the base frame.
 fn assemble_with_pre_post(
     pre: Option<TermFrame>,
     mut base: TermFrame,
     post: Option<TermFrame>,
 ) -> TermFrame {
-    // Determine the max extra rows above the baseline from pre/post frames.
-    let top_pad = pre.as_ref().map(|f| f.ascent())
-        .max(post.as_ref().map(|f| f.ascent()))
+    // Shift base content to align baseline with pre/post scripts.
+    let target_bl = pre.as_ref().map(|f| f.baseline())
+        .max(post.as_ref().map(|f| f.baseline()))
         .unwrap_or(0);
-    let bot_pad = pre.as_ref().map(|f| f.descent())
-        .max(post.as_ref().map(|f| f.descent()))
-        .unwrap_or(0);
-
-    // Pad the base frame so its baseline matches the script frames,
-    // and shift its content down by top_pad rows.
-    let old_bl = base.baseline();
-    if top_pad > 0 {
-        base.translate(TermPoint::new(0, top_pad));
+    let shift = target_bl - base.baseline();
+    if shift > 0 {
+        base.translate(TermPoint::new(0, shift));
+        base.set_baseline(target_bl);
     }
-    base.set_rows(base.rows() + top_pad + bot_pad);
-    base.set_baseline(old_bl + top_pad);
 
     let mut parts: Vec<TermFrame> = Vec::new();
     if let Some(p) = pre  { parts.push(p); }
@@ -325,7 +318,7 @@ fn assemble_with_pre_post(
         return parts.into_iter().next().unwrap();
     }
 
-    compose_horizontal(parts, /*gap=*/0)
+    compose_horizontal(parts, 0)
 }
 
 // ── layout_primes ─────────────────────────────────────────────────────────────

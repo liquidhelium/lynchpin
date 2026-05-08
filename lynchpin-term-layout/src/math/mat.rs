@@ -158,8 +158,8 @@ pub fn layout_cases(
         frames.push(ctx.layout_into_frame(child, styles)?);
     }
 
-    // Baseline at the first child (top-most) for standard alignment.
-    let body = compose_vertical(frames, 0, 0);
+    let mut body = compose_vertical(frames, 0, 0);
+    body.set_baseline(body.rows() / 2);
 
     // For `cases`, only a single delimiter is shown (left for normal,
     // right for reversed).
