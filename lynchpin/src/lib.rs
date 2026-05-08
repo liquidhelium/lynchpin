@@ -5,15 +5,32 @@ pub mod term;
 pub mod compile {
     use comemo::{Track, Tracked};
     use rustc_hash::FxHashSet;
+    use std::sync::LazyLock;
     use typst::{
         __warning, ROUTINES, World,
         diag::{FileError, SourceDiagnostic, SourceResult, Warned},
         ecow::{EcoString, EcoVec, eco_format, eco_vec},
         engine::{Engine, Route, Sink, Traced},
-        foundations::{StyleChain, Styles, Target, TargetElem, Value},
+        foundations::{NativeRuleMap, StyleChain, Styles, Target, TargetElem, Value},
         introspection::Introspector,
+        routines::Routines,
         syntax::{FileId, Span},
     };
+
+    /// Terminal-specific Routines: paged rules replaced with terminal rules.
+    static TERM_ROUTINES: LazyLock<Routines> = LazyLock::new(|| {
+        let mut rules = NativeRuleMap::new();
+        lynchpin_term_layout::rules::register(&mut rules);
+        Routines {
+            rules,
+            eval_string: ROUTINES.eval_string,
+            eval_closure: ROUTINES.eval_closure,
+            realize: ROUTINES.realize,
+            layout_frame: ROUTINES.layout_frame,
+            html_module: ROUTINES.html_module,
+            html_span_filled: ROUTINES.html_span_filled,
+        }
+    });
 
     use crate::{document::term_document, term::TermDocument};
 
@@ -85,7 +102,7 @@ pub mod compile {
                 traced,
                 sink: subsink.track_mut(),
                 route: Route::default(),
-                routines: &ROUTINES,
+                routines: &TERM_ROUTINES,
             };
 
             document = term_document(&mut engine, &content, styles)?;

@@ -171,6 +171,8 @@ struct Verdict<'a> {
 
 enum ShowStep<'a> {
     Recipe(&'a Recipe, RecipeIndex),
+    /// Result pre-computed from a built-in show rule.
+    BuiltIn(Content),
 }
 
 // ── visit: the core dispatch ──────────────────────────────────────────────────
@@ -294,17 +296,25 @@ fn visit_show_rules<'a>(
         )?;
     }
 
-    if let Some(ShowStep::Recipe(recipe, guard)) = step {
-        let chained = styles.chain(&map);
-        let result = {
-            let context = Context::new(output.location(), Some(chained));
-            recipe.apply(
-                s.engine,
-                context.track(),
-                output.into_owned().guarded(guard),
-            )
+    if let Some(step) = step {
+        output = match step {
+            ShowStep::Recipe(recipe, guard) => {
+                let chained = styles.chain(&map);
+                let result = {
+                    let context = Context::new(output.location(), Some(chained));
+                    recipe.apply(
+                        s.engine,
+                        context.track(),
+                        output.into_owned().guarded(guard),
+                    )
+                };
+                Cow::Owned(s.engine.delay(result))
+            }
+            ShowStep::BuiltIn(content) => {
+                // Built-in rule already produced the result.
+                Cow::Owned(content)
+            }
         };
-        output = Cow::Owned(s.engine.delay(result));
     }
 
     let realized = match output {
@@ -378,8 +388,16 @@ fn verdict<'a>(
         }
     }
 
-    // Terminal realization does not apply built-in (paged/HTML) show rules.
-    // All known element types are handled directly in `convert.rs`.
+    // If no user show rule matched, try built-in rules from the engine.
+    // Since our Routines only contains terminal rules, this won't pick up
+    // paged rules.
+    if step.is_none() {
+        let target = styles.get(TargetElem::target);
+        if let Some(rule) = engine.routines.rules.get(target, elem) {
+            let result = rule.apply(elem, engine, styles).ok()?;
+            step = Some(ShowStep::BuiltIn(result));
+        }
+    }
 
     // Nothing to do?
     if step.is_none()

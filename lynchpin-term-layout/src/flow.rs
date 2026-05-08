@@ -38,21 +38,21 @@ use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
 use typst::layout::{
-    BlockBody, BlockElem, BoxElem, GridElem, HElem, HideElem, LayoutElem, PagebreakElem,
-    StackChild, StackElem, VElem,
+    BlockBody, BlockElem, BoxElem, HElem, HideElem, LayoutElem, PagebreakElem, VElem,
 };
 use typst::math::EquationElem;
-use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TableElem, TermsElem};
+use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TermsElem};
 use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawContent, RawElem, RawLine, SpaceElem, TextElem};
+
+use lynchpin_library::TermBlockElem;
 
 use crate::config::TermConfig;
 use crate::eval_spacing;
 use crate::frame::{Row, TermFrame, TermSize};
-use crate::grid::{layout_grid, layout_table};
 use crate::inline::layout_paragraph;
 use crate::lists::{render_enum_item, render_list_item, render_term_item};
-use crate::stack::{compose_horizontal, compose_vertical};
+use crate::stack::compose_vertical;
 
 // ── TermPage ──────────────────────────────────────────────────────────────────
 
@@ -326,16 +326,13 @@ fn handle_block(
         let frame = layout_paragraph(engine, child, state.config, styles, ContentStyle::default())?;
         state.push(frame);
 
-    // ── Grid / Table ──────────────────────────────────────────────────
-    } else if let Some(elem) = child.to_packed::<GridElem>() {
-        let frame = layout_grid(elem, engine, state.config, styles)?;
-        state.push(frame);
-    } else if let Some(elem) = child.to_packed::<TableElem>() {
-        let frame = layout_table(elem, engine, state.config, styles)?;
+    // ── TermBlockElem (terminal-specific block with layout callback) ─────────
+    } else if let Some(tb) = child.to_packed::<TermBlockElem>() {
+        let frame = tb.cb.call(engine, state.config, styles)?;
         state.push(frame);
 
     // ── Layout ────────────────────────────────────────────────────────────────
-    // #layout(func) provides the outer container's dimensions.
+    // #layout(func) needs recursive handle_block, so kept as special case.
     } else if let Some(elem) = child.to_packed::<LayoutElem>() {
         use typst::foundations::{Context, dict};
         use typst::layout::Abs;
@@ -353,57 +350,7 @@ fn handle_block(
             )?
             .display();
         handle_block(state, engine, &result, styles)?;
-
-    // ── Stack ────────────────────────────────────────────────────────────────
-    } else if let Some(elem) = child.to_packed::<StackElem>() {
-        let dir = elem.dir.get(styles);
-        let mut frames: Vec<TermFrame> = Vec::new();
-        let reversed = !dir.is_positive();
-        let var_name: Box<dyn Iterator<Item = _>> = if reversed {
-            Box::new(elem.children.iter().rev())
-        } else {
-            Box::new(elem.children.iter())
-        };
-        for c in var_name {
-            match c {
-                StackChild::Block(content) => {
-                    let mut tmp = FlowState::new(state.config);
-                    handle_block(&mut tmp, engine, content, styles)?;
-                    if !tmp.blocks.is_empty() {
-                        frames.push(compose_vertical(tmp.blocks, 0, 0));
-                    }
-                }
-                StackChild::Spacing(s) => {
-                    let rows = eval_spacing(styles, s);
-                    if !frames.is_empty() {
-                        frames.push(TermFrame::new(TermSize::new(0, dbg!(rows as i32))));
-                    }
-                }
-            }
-        }
-        if !frames.is_empty() {
-            let horiz = dir.axis() == typst::layout::Axis::X;
-            let frame = if horiz {
-                compose_horizontal(frames, 0)
-            } else {
-                compose_vertical(frames, 0, 0)
-            };
-            state.push(frame);
-        }
     }
-    // ── Place ────────────────────────────────────────────────────────────────
-    // else if let Some(elem) = child.to_packed::<PlaceElem>() {
-    //     let mut tmp = FlowState::new(state.config);
-    //     handle_block(&mut tmp, engine, &elem.body, styles)?;
-    //     if !tmp.blocks.is_empty() {
-    //         let body = compose_vertical(tmp.blocks, 1, 0);
-    //         let max_w = state.config.width.unwrap_or(body.cols() as i32) as Col;
-    //         let cx = ((max_w - body.cols()).max(0)) / 2;
-    //         let mut frame = TermFrame::new(TermSize::new(max_w, body.rows()));
-    //         frame.push_frame(TermPoint::new(cx, 0), body);
-    //         state.blocks.push(frame);
-    //     }
-    // }
     // ── Unknown ───────────────────────────────────────────────────────────────
     else {
         engine.sink.warn(__warning!(

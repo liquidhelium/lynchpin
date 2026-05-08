@@ -20,8 +20,12 @@
 //! | `flow`         | Block-level layout and document entry point                |
 //! | `math`         | Math equation layout                                       |
 
-pub mod config;
-pub mod frame;
+pub mod config {
+    pub use lynchpin_library::config::*;
+}
+pub mod frame {
+    pub use lynchpin_library::frame::*;
+}
 pub mod math;
 
 pub mod flow;
@@ -29,6 +33,7 @@ pub mod grid;
 pub mod inline;
 pub mod lists;
 pub mod pad;
+pub mod rules;
 pub mod shapes;
 pub mod stack;
 pub mod transforms;
