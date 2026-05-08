@@ -50,14 +50,20 @@ impl TermSize {
     /// Component-wise maximum.
     #[inline]
     pub fn max(self, other: Self) -> Self {
-        Self { cols: self.cols.max(other.cols), rows: self.rows.max(other.rows) }
+        Self {
+            cols: self.cols.max(other.cols),
+            rows: self.rows.max(other.rows),
+        }
     }
 }
 
 impl std::ops::Add for TermSize {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self { cols: self.cols + rhs.cols, rows: self.rows + rhs.rows }
+        Self {
+            cols: self.cols + rhs.cols,
+            rows: self.rows + rhs.rows,
+        }
     }
 }
 
@@ -92,7 +98,10 @@ impl TermPoint {
 impl std::ops::Add for TermPoint {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self { col: self.col + rhs.col, row: self.row + rhs.row }
+        Self {
+            col: self.col + rhs.col,
+            row: self.row + rhs.row,
+        }
     }
 }
 
@@ -106,14 +115,20 @@ impl std::ops::AddAssign for TermPoint {
 impl std::ops::Sub for TermPoint {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        Self { col: self.col - rhs.col, row: self.row - rhs.row }
+        Self {
+            col: self.col - rhs.col,
+            row: self.row - rhs.row,
+        }
     }
 }
 
 impl std::ops::Neg for TermPoint {
     type Output = Self;
     fn neg(self) -> Self {
-        Self { col: -self.col, row: -self.row }
+        Self {
+            col: -self.col,
+            row: -self.row,
+        }
     }
 }
 
@@ -161,14 +176,26 @@ impl TermFrame {
 
     /// Empty frame of the given size; baseline = 0.
     pub fn new(size: TermSize) -> Self {
-        Self { size, baseline: 0, items: Vec::new() }
+        Self {
+            size,
+            baseline: 0,
+            items: Vec::new(),
+        }
     }
 
     /// Empty frame with baseline centred (useful for tall symmetric constructs
     /// like brackets or operators that centre on the math axis).
     pub fn soft(size: TermSize) -> Self {
-        let baseline = if size.rows > 1 { (size.rows - 1) / 2 } else { 0 };
-        Self { size, baseline, items: Vec::new() }
+        let baseline = if size.rows > 1 {
+            (size.rows - 1) / 2
+        } else {
+            0
+        };
+        Self {
+            size,
+            baseline,
+            items: Vec::new(),
+        }
     }
 
     /// Single-row text frame. Width is inferred from `text_cols(t)`.
@@ -177,36 +204,64 @@ impl TermFrame {
         let cols = text_cols(&t) as Col;
         let mut f = Self::new(TermSize::new(cols, 1));
         if !t.is_empty() {
-            f.items.push((TermPoint::ZERO, TermFrameItem::Text(t, style)));
+            f.items
+                .push((TermPoint::ZERO, TermFrameItem::Text(t, style)));
         }
         f
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
 
-    #[inline] pub fn size(&self)     -> TermSize  { self.size }
-    #[inline] pub fn cols(&self)     -> Col       { self.size.cols }
-    #[inline] pub fn rows(&self)     -> Row       { self.size.rows }
-    #[inline] pub fn baseline(&self) -> Row       { self.baseline }
-    #[inline] pub fn ascent(&self)   -> Row       { self.baseline }
-    #[inline] pub fn descent(&self)  -> Row       { self.size.rows - self.baseline }
-    #[inline] pub fn is_empty_items(&self) -> bool { self.items.is_empty() }
-    #[inline] pub fn items(&self)    -> &[(TermPoint, TermFrameItem)] { &self.items }
+    #[inline]
+    pub fn size(&self) -> TermSize {
+        self.size
+    }
+    #[inline]
+    pub fn cols(&self) -> Col {
+        self.size.cols
+    }
+    #[inline]
+    pub fn rows(&self) -> Row {
+        self.size.rows
+    }
+    #[inline]
+    pub fn baseline(&self) -> Row {
+        self.baseline
+    }
+    #[inline]
+    pub fn ascent(&self) -> Row {
+        self.baseline
+    }
+    #[inline]
+    pub fn descent(&self) -> Row {
+        self.size.rows - self.baseline
+    }
+    #[inline]
+    pub fn is_empty_items(&self) -> bool {
+        self.items.is_empty()
+    }
+    #[inline]
+    pub fn items(&self) -> &[(TermPoint, TermFrameItem)] {
+        &self.items
+    }
 
     // ── Mutators ──────────────────────────────────────────────────────────────
 
-    pub fn set_size(&mut self, s: TermSize)   { self.size = s; }
-    pub fn set_cols(&mut self, c: Col)        { self.size.cols = c; }
-    pub fn set_rows(&mut self, r: Row)        { self.size.rows = r; }
-    pub fn set_baseline(&mut self, row: Row)  { self.baseline = row; }
+    pub fn set_size(&mut self, s: TermSize) {
+        self.size = s;
+    }
+    pub fn set_cols(&mut self, c: Col) {
+        self.size.cols = c;
+    }
+    pub fn set_rows(&mut self, r: Row) {
+        self.size.rows = r;
+    }
+    pub fn set_baseline(&mut self, row: Row) {
+        self.baseline = row;
+    }
 
     /// Place a styled text run at `pos`.
-    pub fn push_text(
-        &mut self,
-        pos: TermPoint,
-        t: impl Into<EcoString>,
-        style: ContentStyle,
-    ) {
+    pub fn push_text(&mut self, pos: TermPoint, t: impl Into<EcoString>, style: ContentStyle) {
         let t: EcoString = t.into();
         if !t.is_empty() {
             self.items.push((pos, TermFrameItem::Text(t, style)));
@@ -271,7 +326,7 @@ impl TermFrame {
             let row = base_row + pos.row;
             match item {
                 TermFrameItem::Text(t, style) => grid.put_text(col, row, t, *style),
-                TermFrameItem::Frame(f)       => f.render_into(grid, col, row),
+                TermFrameItem::Frame(f) => f.render_into(grid, col, row),
             }
         }
     }
@@ -288,7 +343,10 @@ pub struct TermCell {
 
 impl Default for TermCell {
     fn default() -> Self {
-        Self { ch: ' ', style: ContentStyle::default() }
+        Self {
+            ch: ' ',
+            style: ContentStyle::default(),
+        }
     }
 }
 
@@ -310,7 +368,11 @@ pub struct TermGrid {
 impl TermGrid {
     pub fn blank(cols: Col, rows: Row) -> Self {
         let n = (cols.max(0) * rows.max(0)) as usize;
-        Self { cols, rows, cells: vec![TermCell::default(); n] }
+        Self {
+            cols,
+            rows,
+            cells: vec![TermCell::default(); n],
+        }
     }
 
     fn idx(&self, col: Col, row: Row) -> Option<usize> {
@@ -322,7 +384,9 @@ impl TermGrid {
     }
 
     pub fn get(&self, col: Col, row: Row) -> TermCell {
-        self.idx(col, row).map(|i| self.cells[i].clone()).unwrap_or_default()
+        self.idx(col, row)
+            .map(|i| self.cells[i].clone())
+            .unwrap_or_default()
     }
 
     pub fn set(&mut self, col: Col, row: Row, cell: TermCell) {
@@ -408,41 +472,93 @@ fn apply_style(out: &mut String, s: &ContentStyle) {
     }
     // Check individual attributes via bitmask helpers.
     let attrs = s.attributes;
-    if attrs.has(Attribute::Bold)       { out.push_str("\x1b[1m"); }
-    if attrs.has(Attribute::Dim)        { out.push_str("\x1b[2m"); }
-    if attrs.has(Attribute::Italic)     { out.push_str("\x1b[3m"); }
-    if attrs.has(Attribute::Underlined) { out.push_str("\x1b[4m"); }
-    if attrs.has(Attribute::Reverse)    { out.push_str("\x1b[7m"); }
-    if attrs.has(Attribute::CrossedOut) { out.push_str("\x1b[9m"); }
-    if attrs.has(Attribute::OverLined)  { out.push_str("\x1b[53m"); }
+    if attrs.has(Attribute::Bold) {
+        out.push_str("\x1b[1m");
+    }
+    if attrs.has(Attribute::Dim) {
+        out.push_str("\x1b[2m");
+    }
+    if attrs.has(Attribute::Italic) {
+        out.push_str("\x1b[3m");
+    }
+    if attrs.has(Attribute::Underlined) {
+        out.push_str("\x1b[4m");
+    }
+    if attrs.has(Attribute::Reverse) {
+        out.push_str("\x1b[7m");
+    }
+    if attrs.has(Attribute::CrossedOut) {
+        out.push_str("\x1b[9m");
+    }
+    if attrs.has(Attribute::OverLined) {
+        out.push_str("\x1b[53m");
+    }
 }
 
 fn push_color(out: &mut String, c: Color, bg: bool) {
     let (base, hi) = if bg { (40, 100) } else { (30, 90) };
     match c {
-        Color::Black       => { let _ = write!(out, "\x1b[{}m", base);     }
-        Color::DarkRed     => { let _ = write!(out, "\x1b[{}m", base + 1); }
-        Color::DarkGreen   => { let _ = write!(out, "\x1b[{}m", base + 2); }
-        Color::DarkYellow  => { let _ = write!(out, "\x1b[{}m", base + 3); }
-        Color::DarkBlue    => { let _ = write!(out, "\x1b[{}m", base + 4); }
-        Color::DarkMagenta => { let _ = write!(out, "\x1b[{}m", base + 5); }
-        Color::DarkCyan    => { let _ = write!(out, "\x1b[{}m", base + 6); }
-        Color::Grey        => { let _ = write!(out, "\x1b[{}m", base + 7); }
-        Color::DarkGrey    => { let _ = write!(out, "\x1b[{}m", hi);       }
-        Color::Red         => { let _ = write!(out, "\x1b[{}m", hi + 1);   }
-        Color::Green       => { let _ = write!(out, "\x1b[{}m", hi + 2);   }
-        Color::Yellow      => { let _ = write!(out, "\x1b[{}m", hi + 3);   }
-        Color::Blue        => { let _ = write!(out, "\x1b[{}m", hi + 4);   }
-        Color::Magenta     => { let _ = write!(out, "\x1b[{}m", hi + 5);   }
-        Color::Cyan        => { let _ = write!(out, "\x1b[{}m", hi + 6);   }
-        Color::White       => { let _ = write!(out, "\x1b[{}m", hi + 7);   }
+        Color::Black => {
+            let _ = write!(out, "\x1b[{}m", base);
+        }
+        Color::DarkRed => {
+            let _ = write!(out, "\x1b[{}m", base + 1);
+        }
+        Color::DarkGreen => {
+            let _ = write!(out, "\x1b[{}m", base + 2);
+        }
+        Color::DarkYellow => {
+            let _ = write!(out, "\x1b[{}m", base + 3);
+        }
+        Color::DarkBlue => {
+            let _ = write!(out, "\x1b[{}m", base + 4);
+        }
+        Color::DarkMagenta => {
+            let _ = write!(out, "\x1b[{}m", base + 5);
+        }
+        Color::DarkCyan => {
+            let _ = write!(out, "\x1b[{}m", base + 6);
+        }
+        Color::Grey => {
+            let _ = write!(out, "\x1b[{}m", base + 7);
+        }
+        Color::DarkGrey => {
+            let _ = write!(out, "\x1b[{}m", hi);
+        }
+        Color::Red => {
+            let _ = write!(out, "\x1b[{}m", hi + 1);
+        }
+        Color::Green => {
+            let _ = write!(out, "\x1b[{}m", hi + 2);
+        }
+        Color::Yellow => {
+            let _ = write!(out, "\x1b[{}m", hi + 3);
+        }
+        Color::Blue => {
+            let _ = write!(out, "\x1b[{}m", hi + 4);
+        }
+        Color::Magenta => {
+            let _ = write!(out, "\x1b[{}m", hi + 5);
+        }
+        Color::Cyan => {
+            let _ = write!(out, "\x1b[{}m", hi + 6);
+        }
+        Color::White => {
+            let _ = write!(out, "\x1b[{}m", hi + 7);
+        }
         Color::Rgb { r, g, b } => {
-            if bg { let _ = write!(out, "\x1b[48;2;{r};{g};{b}m"); }
-            else  { let _ = write!(out, "\x1b[38;2;{r};{g};{b}m"); }
+            if bg {
+                let _ = write!(out, "\x1b[48;2;{r};{g};{b}m");
+            } else {
+                let _ = write!(out, "\x1b[38;2;{r};{g};{b}m");
+            }
         }
         Color::AnsiValue(n) => {
-            if bg { let _ = write!(out, "\x1b[48;5;{n}m"); }
-            else  { let _ = write!(out, "\x1b[38;5;{n}m"); }
+            if bg {
+                let _ = write!(out, "\x1b[48;5;{n}m");
+            } else {
+                let _ = write!(out, "\x1b[38;5;{n}m");
+            }
         }
         _ => {}
     }

@@ -45,8 +45,10 @@ pub fn layout_accent(
 
     // Build a one-row frame for the accent character.
     let accent_str: String = display_accent_char(ctx, accent).to_string();
-    let accent_text_frame =
-        TermFrame::text(ecow::EcoString::from(accent_str.as_str()), ContentStyle::default());
+    let accent_text_frame = TermFrame::text(
+        ecow::EcoString::from(accent_str.as_str()),
+        ContentStyle::default(),
+    );
     let accent_cols = accent_text_frame.cols().max(1);
 
     // Horizontal position: centre the accent over the base's accent-attach point.
@@ -82,7 +84,11 @@ pub fn layout_accent(
         let mut frame = TermFrame::new(TermSize::new(total_cols, total_rows));
         frame.set_baseline(1 + base_baseline);
 
-        frame.push_text(TermPoint::new(accent_x, 0), accent_str, ContentStyle::default());
+        frame.push_text(
+            TermPoint::new(accent_x, 0),
+            accent_str,
+            ContentStyle::default(),
+        );
         frame.push_frame(TermPoint::new(0, 1), base_frame);
 
         ctx.push(
@@ -109,22 +115,22 @@ fn display_accent_char(ctx: &TermMathContext, accent: Accent) -> char {
     if ctx.config.mode.is_ascii() {
         // Map common combining accents to ASCII equivalents.
         match ch {
-            '\u{0300}' => '`',  // combining grave
-            '\u{0301}' => '\'', // combining acute
-            '\u{0302}' => '^',  // combining circumflex / hat
-            '\u{0303}' => '~',  // combining tilde
+            '\u{0300}' => '`',              // combining grave
+            '\u{0301}' => '\'',             // combining acute
+            '\u{0302}' => '^',              // combining circumflex / hat
+            '\u{0303}' => '~',              // combining tilde
             '\u{0304}' | '\u{0305}' => '-', // combining macron / overline
-            '\u{0306}' => 'u',  // combining breve
-            '\u{0307}' => '.',  // combining dot above
-            '\u{0308}' => '"',  // combining diaeresis
-            '\u{030A}' => 'o',  // combining ring above
-            '\u{030B}' => '"',  // combining double acute
-            '\u{030C}' => 'v',  // combining caron
-            '\u{20D6}' => '<',  // combining left arrow above
-            '\u{20D7}' => '>',  // combining right arrow above  (→)
-            '\u{20E1}' => '-',  // combining left-right arrow
-            '\u{20D0}' => '<',  // combining left harpoon above
-            '\u{20D1}' => '>',  // combining right harpoon above
+            '\u{0306}' => 'u',              // combining breve
+            '\u{0307}' => '.',              // combining dot above
+            '\u{0308}' => '"',              // combining diaeresis
+            '\u{030A}' => 'o',              // combining ring above
+            '\u{030B}' => '"',              // combining double acute
+            '\u{030C}' => 'v',              // combining caron
+            '\u{20D6}' => '<',              // combining left arrow above
+            '\u{20D7}' => '>',              // combining right arrow above  (→)
+            '\u{20E1}' => '-',              // combining left-right arrow
+            '\u{20D0}' => '<',              // combining left harpoon above
+            '\u{20D1}' => '>',              // combining right harpoon above
             _ => ch,
         }
     } else {

@@ -34,8 +34,10 @@ use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
 use typst::layout::{BoxElem, HElem, HideElem};
 use typst::math::EquationElem;
 use typst::model::{EmphElem, StrongElem};
-use typst::text::{DecoLine, HighlightElem, LinebreakElem, OverlineElem, SpaceElem,
-    StrikeElem, SubElem, SuperElem, TextElem, UnderlineElem, WeightDelta};
+use typst::text::{
+    DecoLine, HighlightElem, LinebreakElem, OverlineElem, SpaceElem, StrikeElem, SubElem,
+    SuperElem, TextElem, UnderlineElem, WeightDelta,
+};
 use typst::visualize::Paint;
 
 use crate::config::TermConfig;
@@ -105,9 +107,15 @@ fn collect_items(
         for child in &seq.children {
             collect_items(child, styles, base_style, items, engine, config);
         }
-
     } else if let Some(s) = content.to_packed::<StyledElem>() {
-        collect_items(&s.child, styles.chain(&s.styles), base_style, items, engine, config);
+        collect_items(
+            &s.child,
+            styles.chain(&s.styles),
+            base_style,
+            items,
+            engine,
+            config,
+        );
 
     // ── Plain text ────────────────────────────────────────────────────────────
     } else if let Some(elem) = content.to_packed::<TextElem>() {
@@ -135,10 +143,18 @@ fn collect_items(
         // set by the paged pipeline on the StyleChain via TextElem::deco.
         for deco in styles.get_cloned(TextElem::deco).iter() {
             match &deco.line {
-                DecoLine::Underline { .. }    => { style.attributes.set(Attribute::Underlined); }
-                DecoLine::Strikethrough { .. } => { style.attributes.set(Attribute::CrossedOut); }
-                DecoLine::Overline { .. }      => { style.attributes.set(Attribute::OverLined); }
-                DecoLine::Highlight { .. }     => { style.background_color = Some(Color::Yellow); }
+                DecoLine::Underline { .. } => {
+                    style.attributes.set(Attribute::Underlined);
+                }
+                DecoLine::Strikethrough { .. } => {
+                    style.attributes.set(Attribute::CrossedOut);
+                }
+                DecoLine::Overline { .. } => {
+                    style.attributes.set(Attribute::OverLined);
+                }
+                DecoLine::Highlight { .. } => {
+                    style.background_color = Some(Color::Yellow);
+                }
             }
         }
 
@@ -165,7 +181,6 @@ fn collect_items(
     // ── Whitespace ────────────────────────────────────────────────────────────
     } else if content.is::<SpaceElem>() {
         items.push(InlineItem::Space(1));
-
     } else if content.is::<LinebreakElem>() {
         items.push(InlineItem::Break);
 
@@ -173,15 +188,13 @@ fn collect_items(
     } else if let Some(eq) = content.to_packed::<EquationElem>() {
         if !eq.block.get(styles) {
             // Use the real math layout engine.
-            if let Ok(eq_frame) =
-                crate::math::layout_equation_inline(eq, engine, config, styles)
-            {
+            if let Ok(eq_frame) = crate::math::layout_equation_inline(eq, engine, config, styles) {
                 items.push(InlineItem::Frame(eq_frame));
             }
         }
         // Block equations inside inline context: skip.
 
-    // ── Layout containers ─────────────────────────────────────────────────────
+        // ── Layout containers ─────────────────────────────────────────────────────
     } else if let Some(elem) = content.to_packed::<HideElem>() {
         // Measure the body to get its display width, then emit equivalent
         // blank space so the hidden content still occupies the right amount
@@ -192,12 +205,10 @@ fn collect_items(
         if width > 0 {
             items.push(InlineItem::Space(width));
         }
-
     } else if let Some(elem) = content.to_packed::<BoxElem>() {
         if let Some(body) = elem.body.get_ref(styles) {
             collect_items(body, styles, base_style, items, engine, config);
         }
-
     } else if let Some(elem) = content.to_packed::<HElem>() {
         if !elem.amount.is_zero() {
             items.push(InlineItem::Space(1));
@@ -211,42 +222,34 @@ fn collect_items(
         let mut new_style = base_style;
         new_style.attributes.set(Attribute::Bold);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<EmphElem>() {
         let mut new_style = base_style;
         new_style.attributes.set(Attribute::Italic);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<UnderlineElem>() {
         let mut new_style = base_style;
         new_style.attributes.set(Attribute::Underlined);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<StrikeElem>() {
         let mut new_style = base_style;
         new_style.attributes.set(Attribute::CrossedOut);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<OverlineElem>() {
         let mut new_style = base_style;
         new_style.attributes.set(Attribute::OverLined);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<HighlightElem>() {
         let mut new_style = base_style;
         new_style.background_color = Some(Color::Yellow);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<SubElem>() {
         let mut new_style = base_style;
         new_style.foreground_color = Some(Color::DarkGrey);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     } else if let Some(elem) = content.to_packed::<SuperElem>() {
         let mut new_style = base_style;
         new_style.foreground_color = Some(Color::DarkGrey);
         collect_items(&elem.body, styles, new_style, items, engine, config);
-
     }
     // All other element types are silently skipped in the inline context.
 }
@@ -264,10 +267,10 @@ fn build_line_frame(items: &[InlineItem]) -> TermFrame {
         return TermFrame::new(TermSize::new(0, 1));
     }
 
-    let max_ascent: Row  = items.iter().map(|i| i.ascent()).max().unwrap_or(0);
+    let max_ascent: Row = items.iter().map(|i| i.ascent()).max().unwrap_or(0);
     let max_descent: Row = items.iter().map(|i| i.descent()).max().unwrap_or(1);
-    let total_rows       = (max_ascent + max_descent).max(1);
-    let total_cols: Col  = items.iter().map(|i| i.width()).sum();
+    let total_rows = (max_ascent + max_descent).max(1);
+    let total_cols: Col = items.iter().map(|i| i.width()).sum();
 
     let mut frame = TermFrame::new(TermSize::new(total_cols.max(0), total_rows));
     frame.set_baseline(max_ascent);
@@ -329,8 +332,8 @@ pub fn layout_paragraph(
 
     // ── Step 2: split at explicit breaks and wrap at config.width ─────────────
     let mut lines: Vec<Vec<InlineItem>> = Vec::new();
-    let mut current: Vec<InlineItem>    = Vec::new();
-    let mut current_width: Col          = 0;
+    let mut current: Vec<InlineItem> = Vec::new();
+    let mut current_width: Col = 0;
 
     for item in items {
         match item {
@@ -376,12 +379,9 @@ pub fn layout_paragraph(
     }
 
     // ── Step 3: build a frame per line, then stack vertically ─────────────────
-    let line_frames: Vec<TermFrame> = lines
-        .iter()
-        .map(|l| build_line_frame(l))
-        .collect();
+    let line_frames: Vec<TermFrame> = lines.iter().map(|l| build_line_frame(l)).collect();
 
-    let max_cols: Col  = line_frames.iter().map(|f| f.cols()).max().unwrap_or(0);
+    let max_cols: Col = line_frames.iter().map(|f| f.cols()).max().unwrap_or(0);
     let total_rows: Row = line_frames.iter().map(|f| f.rows().max(1)).sum();
 
     let first_baseline = line_frames.first().map(|f| f.baseline()).unwrap_or(0);

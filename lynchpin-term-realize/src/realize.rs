@@ -18,24 +18,24 @@ use comemo::Track;
 use typst::diag::{At, SourceResult, bail};
 use typst::engine::Engine;
 use typst::foundations::{
-    Content, Context, NativeElement, Packed, Recipe, RecipeIndex,
-    SequenceElem, ShowSet, StyleChain, StyledElem, Styles, Synthesize, Transformation,
+    Content, Context, NativeElement, Packed, Recipe, RecipeIndex, SequenceElem, ShowSet,
+    StyleChain, StyledElem, Styles, Synthesize, Transformation,
 };
 use typst::foundations::{ContextElem, TargetElem};
 use typst::introspection::TagElem;
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
 use typst::math::{EquationElem, Mathy};
 use typst::model::{
-    DocumentInfo, EmphElem, EnumElem, ListElem, ListItemLike, ListLike, ParElem,
-    ParbreakElem, StrongElem, TermsElem,
+    DocumentInfo, EmphElem, EnumElem, ListElem, ListItemLike, ListLike, ParElem, ParbreakElem,
+    StrongElem, TermsElem,
 };
 use typst::routines::{Arenas, Pair};
 use typst::syntax::Span;
-use typst::text::{HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem,
-    SmartQuoteElem, SpaceElem, StrikeElem, SubElem, SuperElem, TextElem, UnderlineElem,
-    WeightDelta};
+use typst::text::{
+    HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem, SmartQuoteElem, SpaceElem,
+    StrikeElem, SubElem, SuperElem, TextElem, UnderlineElem, WeightDelta,
+};
 use typst::utils::SliceExt;
-
 
 // ── RealizationKind ───────────────────────────────────────────────────────────
 
@@ -128,7 +128,7 @@ struct GroupingRule {
     interrupt: fn(typst::foundations::Element) -> bool,
     /// Converts the accumulated `s.sink[start..]` slice into the grouped
     /// element and re-visits it.
-    finish: fn(Grouped<'_,'_,'_,'_>) -> SourceResult<()>,
+    finish: fn(Grouped<'_, '_, '_, '_>) -> SourceResult<()>,
 }
 
 struct Grouping<'a> {
@@ -213,7 +213,9 @@ fn visit<'a>(
     // Document mode: wrap Mathy in EquationElem, convert SymbolElem -> TextElem.
     if s.kind != TermRealizationKind::Math {
         if content.can::<dyn Mathy>() && !content.is::<EquationElem>() {
-            let eq = EquationElem::new(content.clone()).pack().spanned(content.span());
+            let eq = EquationElem::new(content.clone())
+                .pack()
+                .spanned(content.span());
             visit(s, s.store(eq), styles)?;
             return Ok(());
         }
@@ -271,7 +273,11 @@ fn visit_show_rules<'a>(
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
-    let Some(Verdict { prepared, mut map, step }) = verdict(s.engine, content, styles)
+    let Some(Verdict {
+        prepared,
+        mut map,
+        step,
+    }) = verdict(s.engine, content, styles)
     else {
         return Ok(false);
     };
@@ -279,7 +285,13 @@ fn visit_show_rules<'a>(
     let mut output = Cow::Borrowed(content);
 
     if !prepared {
-        prepare(s.engine, output.to_mut(), &mut map, styles, &mut s.loc_counter)?;
+        prepare(
+            s.engine,
+            output.to_mut(),
+            &mut map,
+            styles,
+            &mut s.loc_counter,
+        )?;
     }
 
     if let Some(ShowStep::Recipe(recipe, guard)) = step {
@@ -384,7 +396,11 @@ fn verdict<'a>(
         return None;
     }
 
-    Some(Verdict { prepared, map, step })
+    Some(Verdict {
+        prepared,
+        map,
+        step,
+    })
 }
 
 /// First-time preparation of an element: applies show-set rules, synthesizes
@@ -428,7 +444,9 @@ fn visit_styled<'a>(
 
     // Populate document metadata from document-level set rules.
     for style in local.iter() {
-        let Some(elem_type) = style.element() else { continue };
+        let Some(elem_type) = style.element() else {
+            continue;
+        };
         if elem_type == typst::model::DocumentElem::ELEM {
             s.info.populate(&*local);
         } else if elem_type == TextElem::ELEM {
@@ -473,9 +491,7 @@ fn visit_grouping_rules<'a>(
 
         // Add to the active grouping if it's not interrupted and the element
         // is a trigger or an inner element.
-        if !active.interrupted
-            && ((active.rule.trigger)(content) || (active.rule.inner)(content))
-        {
+        if !active.interrupted && ((active.rule.trigger)(content) || (active.rule.inner)(content)) {
             s.sink.push((content, styles));
             return Ok(true);
         }
@@ -489,7 +505,11 @@ fn visit_grouping_rules<'a>(
 
     if let Some(rule) = matching {
         let start = s.sink.len();
-        s.groupings.push(Grouping { start, rule, interrupted: false });
+        s.groupings.push(Grouping {
+            start,
+            rule,
+            interrupted: false,
+        });
         s.sink.push((content, styles));
         return Ok(true);
     }
@@ -532,7 +552,9 @@ fn visit_filter_rules<'a>(
         }
     }
     // Cherry-picked built-in: HideElem
-    if content.is::<HideElem>() { return Ok(true); }
+    if content.is::<HideElem>() {
+        return Ok(true);
+    }
     Ok(false)
 }
 
@@ -589,9 +611,7 @@ fn finish_interrupted(s: &mut State, local: &Styles) -> SourceResult<()> {
         if last == Some(elem) {
             continue;
         }
-        finish_grouping_while(s, |s| {
-            s.groupings.iter().any(|g| (g.rule.interrupt)(elem))
-        })?;
+        finish_grouping_while(s, |s| s.groupings.iter().any(|g| (g.rule.interrupt)(elem)))?;
         last = Some(elem);
     }
     Ok(())

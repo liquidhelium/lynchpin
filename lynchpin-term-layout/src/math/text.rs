@@ -9,9 +9,9 @@ use unicode_math_class::MathClass;
 
 use crate::frame::TermFrame;
 
+use super::TermMathContext;
 use super::fragment::{TermLimits, TermMathFragment, TermMathFrameFragment};
 use super::operators;
-use super::TermMathContext;
 
 // ── layout_text ───────────────────────────────────────────────────────────────
 
@@ -149,5 +149,7 @@ pub fn layout_op(
 /// Create a plain text fragment for `s` with the given class.
 pub(super) fn text_frag(s: &str, class: MathClass) -> TermMathFrameFragment {
     let frame = TermFrame::text(EcoString::from(s), ContentStyle::default());
-    TermMathFrameFragment::new(frame).with_class(class).with_text_like(true)
+    TermMathFrameFragment::new(frame)
+        .with_class(class)
+        .with_text_like(true)
 }

@@ -10,9 +10,9 @@ use typst::{
     routines::Arenas,
 };
 
-use lynchpin_term_realize::TermRealizationKind;
 use lynchpin_term_layout::config::TermConfig;
 use lynchpin_term_layout::flow::layout_document;
+use lynchpin_term_realize::TermRealizationKind;
 
 pub fn term_document(
     engine: &mut Engine,
@@ -71,17 +71,17 @@ fn term_document_impl(
     )?;
 
     let config = TermConfig::default();
-    let pages = layout_document(
-        &mut engine,
-        children.iter().copied(),
-        &config,
-        styles,
-    )?;
+    let pages = layout_document(&mut engine, children.iter().copied(), &config, styles)?;
 
     // Terminal rendering doesn't need introspection; an empty Introspector
     // makes the convergence loop in compile.rs always validate on the first
     // pass (no tracked accesses ⇒ constraint is trivially satisfied).
     let introspector = Introspector::default();
 
-    Ok(TermDocument { pages, info, introspector, config })
+    Ok(TermDocument {
+        pages,
+        info,
+        introspector,
+        config,
+    })
 }

@@ -239,18 +239,57 @@ impl TermMathFrameFragment {
 
     // ── Builder methods ───────────────────────────────────────────────────────
 
-    #[inline] pub fn with_class(mut self, class: MathClass)                  -> Self { self.class = class; self }
-    #[inline] pub fn with_limits(mut self, limits: TermLimits)               -> Self { self.limits = limits; self }
-    #[inline] pub fn with_spaced(mut self, spaced: bool)                     -> Self { self.spaced = spaced; self }
-    #[inline] pub fn with_text_like(mut self, text_like: bool)               -> Self { self.text_like = text_like; self }
-    #[inline] pub fn with_italics_correction(mut self, ic: Col)              -> Self { self.italics_correction = ic; self }
-    #[inline] pub fn with_accent_attach(mut self, aa: Col)                   -> Self { self.accent_attach = aa; self }
+    #[inline]
+    pub fn with_class(mut self, class: MathClass) -> Self {
+        self.class = class;
+        self
+    }
+    #[inline]
+    pub fn with_limits(mut self, limits: TermLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+    #[inline]
+    pub fn with_spaced(mut self, spaced: bool) -> Self {
+        self.spaced = spaced;
+        self
+    }
+    #[inline]
+    pub fn with_text_like(mut self, text_like: bool) -> Self {
+        self.text_like = text_like;
+        self
+    }
+    #[inline]
+    pub fn with_italics_correction(mut self, ic: Col) -> Self {
+        self.italics_correction = ic;
+        self
+    }
+    #[inline]
+    pub fn with_accent_attach(mut self, aa: Col) -> Self {
+        self.accent_attach = aa;
+        self
+    }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
 
-    #[inline] pub fn width(&self)   -> Col { self.frame.cols() }
-    #[inline] pub fn rows(&self)    -> Row { self.frame.rows() }
-    #[inline] pub fn ascent(&self)  -> Row { self.frame.ascent() }
-    #[inline] pub fn descent(&self) -> Row { self.frame.descent() }
-    #[inline] pub fn baseline(&self)-> Row { self.frame.baseline() }
+    #[inline]
+    pub fn width(&self) -> Col {
+        self.frame.cols()
+    }
+    #[inline]
+    pub fn rows(&self) -> Row {
+        self.frame.rows()
+    }
+    #[inline]
+    pub fn ascent(&self) -> Row {
+        self.frame.ascent()
+    }
+    #[inline]
+    pub fn descent(&self) -> Row {
+        self.frame.descent()
+    }
+    #[inline]
+    pub fn baseline(&self) -> Row {
+        self.frame.baseline()
+    }
 }

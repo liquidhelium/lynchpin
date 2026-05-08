@@ -120,7 +120,10 @@ impl TermMathRun {
     /// Math class predicted for the composed output.
     pub fn class(&self) -> MathClass {
         if self.0.len() == 1 {
-            self.0.first().map(|f| f.class()).unwrap_or(MathClass::Normal)
+            self.0
+                .first()
+                .map(|f| f.class())
+                .unwrap_or(MathClass::Normal)
         } else {
             MathClass::Normal
         }
@@ -128,14 +131,19 @@ impl TermMathRun {
 
     /// Whether this run contains a [`Linebreak`](TermMathFragment::Linebreak).
     pub fn is_multiline(&self) -> bool {
-        self.0.iter().any(|f| matches!(f, TermMathFragment::Linebreak))
+        self.0
+            .iter()
+            .any(|f| matches!(f, TermMathFragment::Linebreak))
     }
 
     /// Number of visual rows (linebreak count + 1, ignoring a trailing
     /// linebreak).
     pub fn row_count(&self) -> usize {
-        let mut count =
-            1 + self.0.iter().filter(|f| matches!(f, TermMathFragment::Linebreak)).count();
+        let mut count = 1 + self
+            .0
+            .iter()
+            .filter(|f| matches!(f, TermMathFragment::Linebreak))
+            .count();
         // A trailing linebreak doesn't introduce an extra empty row.
         if let Some(TermMathFragment::Linebreak) = self.0.last() {
             count -= 1;
@@ -203,7 +211,9 @@ impl TermMathRun {
             .filter(|f| matches!(f, TermMathFragment::Frame(_)))
             .all(|f| f.is_text_like());
 
-        TermMathFrameFragment::new(self.into_frame()).with_text_like(text_like).into()
+        TermMathFrameFragment::new(self.into_frame())
+            .with_text_like(text_like)
+            .into()
     }
 
     /// Compose rows vertically with a 1-row gap between them.
@@ -217,11 +227,9 @@ impl TermMathRun {
         }
 
         // Compute each row's frame and dimensions.
-        let row_frames: Vec<TermFrame> =
-            rows.into_iter().map(|r| r.into_frame()).collect();
+        let row_frames: Vec<TermFrame> = rows.into_iter().map(|r| r.into_frame()).collect();
 
-        let total_cols: Col =
-            row_frames.iter().map(|f| f.cols()).max().unwrap_or(0);
+        let total_cols: Col = row_frames.iter().map(|f| f.cols()).max().unwrap_or(0);
         let row_gap: Row = 1;
         let total_rows: Row = row_frames.iter().map(|f| f.rows().max(1)).sum::<Row>()
             + row_gap * (row_count.saturating_sub(1)) as Row;
@@ -286,15 +294,16 @@ fn auto_spacing(l: MathClass, r: MathClass) -> Option<Col> {
 /// Build a 1-column-wide [`TermFrame`] from a vertical list of characters.
 ///
 /// Used by `lr.rs` and `mat.rs` to render stretched delimiters.
-pub fn build_delimiter_frame(
-    chars: Vec<char>,
-    style: crossterm::style::ContentStyle,
-) -> TermFrame {
+pub fn build_delimiter_frame(chars: Vec<char>, style: crossterm::style::ContentStyle) -> TermFrame {
     let height = chars.len() as Row;
     if height == 0 {
         return TermFrame::new(TermSize::ZERO);
     }
-    let width: Col = chars.iter().map(|c| crate::frame::char_cols(*c) as Col).max().unwrap_or(1);
+    let width: Col = chars
+        .iter()
+        .map(|c| crate::frame::char_cols(*c) as Col)
+        .max()
+        .unwrap_or(1);
     let mut frame = TermFrame::new(TermSize::new(width.max(1), height));
     frame.set_baseline(height / 2); // vertically centred for horizontal composition
     for (i, ch) in chars.into_iter().enumerate() {

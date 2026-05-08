@@ -6,8 +6,8 @@ use typst::math::{BinomElem, FracElem, FracStyle};
 
 use crate::frame::{Row, TermFrame, TermPoint, TermSize};
 
-use super::fragment::TermMathFrameFragment;
 use super::TermMathContext;
+use super::fragment::TermMathFrameFragment;
 
 // ── layout_frac ───────────────────────────────────────────────────────────────
 
@@ -27,7 +27,10 @@ pub fn layout_frac(
             // Inline: num / denom
             let num = ctx.layout_into_fragment(&elem.num, styles)?;
             ctx.push(num);
-            ctx.push(super::text::text_frag("/", unicode_math_class::MathClass::Normal));
+            ctx.push(super::text::text_frag(
+                "/",
+                unicode_math_class::MathClass::Normal,
+            ));
             let denom = ctx.layout_into_fragment(&elem.denom, styles)?;
             ctx.push(denom);
         }
@@ -57,7 +60,10 @@ pub fn layout_binom(
                 if i == 0 {
                     vec![c.clone()]
                 } else {
-                    vec![SymbolElem::packed(',').spanned(typst::syntax::Span::detached()), c.clone()]
+                    vec![
+                        SymbolElem::packed(',').spanned(typst::syntax::Span::detached()),
+                        c.clone(),
+                    ]
                 }
             })
             .collect();
@@ -128,10 +134,8 @@ fn build_vertical_frac(
         let height = total_rows;
         let left_chars = ctx.config.mode.left_paren(height);
         let right_chars = ctx.config.mode.right_paren(height);
-        let left_frame =
-            super::run::build_delimiter_frame(left_chars, ContentStyle::default());
-        let right_frame =
-            super::run::build_delimiter_frame(right_chars, ContentStyle::default());
+        let left_frame = super::run::build_delimiter_frame(left_chars, ContentStyle::default());
+        let right_frame = super::run::build_delimiter_frame(right_chars, ContentStyle::default());
 
         let lw = left_frame.cols();
         let rw = right_frame.cols();

@@ -34,9 +34,17 @@ struct SqrtChars {
 
 fn sqrt_chars(ctx: &TermMathContext) -> SqrtChars {
     if ctx.config.mode.is_unicode() {
-        SqrtChars { diag_tl: '╲', diag_tr: '╱', overline: '_' }
+        SqrtChars {
+            diag_tl: '╲',
+            diag_tr: '╱',
+            overline: '_',
+        }
     } else {
-        SqrtChars { diag_tl: '\\', diag_tr: '/', overline: '_' }
+        SqrtChars {
+            diag_tl: '\\',
+            diag_tr: '/',
+            overline: '_',
+        }
     }
 }
 

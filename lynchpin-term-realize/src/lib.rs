@@ -13,4 +13,4 @@
 
 pub mod realize;
 
-pub use realize::{realize_term, TermRealizationKind};
+pub use realize::{TermRealizationKind, realize_term};

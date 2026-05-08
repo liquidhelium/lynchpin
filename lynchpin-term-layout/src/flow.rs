@@ -38,7 +38,8 @@ use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
 use typst::layout::{
-    BlockBody, BlockElem, BoxElem, GridElem, HElem, HideElem, LayoutElem, PagebreakElem, StackChild, StackElem, VElem,
+    BlockBody, BlockElem, BoxElem, GridElem, HElem, HideElem, LayoutElem, PagebreakElem,
+    StackChild, StackElem, VElem,
 };
 use typst::math::EquationElem;
 use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TableElem, TermsElem};
@@ -46,12 +47,12 @@ use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawContent, RawElem, RawLine, SpaceElem, TextElem};
 
 use crate::config::TermConfig;
+use crate::eval_spacing;
 use crate::frame::{Row, TermFrame, TermSize};
 use crate::grid::{layout_grid, layout_table};
 use crate::inline::layout_paragraph;
 use crate::lists::{render_enum_item, render_list_item, render_term_item};
 use crate::stack::{compose_horizontal, compose_vertical};
-use crate::eval_spacing;
 
 // ── TermPage ──────────────────────────────────────────────────────────────────
 
@@ -295,7 +296,7 @@ fn handle_block(
         // Insert a visual blank row to separate adjacent blocks.
         state.push_blank(1);
     } else if child.is::<LinebreakElem>() {
-
+        // automatically handled.
     } else if child.is::<HElem>() {
         // Horizontal spacing at block level: skip.
     } else if let Some(v) = child.to_packed::<VElem>() {

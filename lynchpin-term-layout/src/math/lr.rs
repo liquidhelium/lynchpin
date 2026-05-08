@@ -79,7 +79,9 @@ fn is_delimiter_class(class: MathClass) -> bool {
 /// We look at all fragments except the first and last (which are typically the
 /// opening/closing delimiters).  If the group has ≤ 2 fragments we return 1.
 fn inner_content_metrics(frags: &[TermMathFragment]) -> (Row, Row) {
-    if frags.len() <= 2 { return (1, 0); }
+    if frags.len() <= 2 {
+        return (1, 0);
+    }
     let inner = &frags[1..frags.len() - 1];
     let a = inner.iter().map(|f| f.ascent()).max().unwrap_or(0);
     let d = inner.iter().map(|f| f.descent()).max().unwrap_or(1);
@@ -97,10 +99,17 @@ fn try_stretch_delimiter(
     _is_opening: bool,
 ) {
     let class = frag.class();
-    if !is_delimiter_class(class) { return; }
-    let ch = match extract_single_char(frag) { Some(c) => c, None => return };
+    if !is_delimiter_class(class) {
+        return;
+    }
+    let ch = match extract_single_char(frag) {
+        Some(c) => c,
+        None => return,
+    };
     let chars = stretch_chars_for(ch, height, ctx);
-    if chars.is_empty() { return; }
+    if chars.is_empty() {
+        return;
+    }
 
     let new_frame = build_delimiter_frame(chars, ContentStyle::default());
     let mut frame_frag = TermMathFrameFragment::new(new_frame).with_class(class);
@@ -205,13 +214,11 @@ pub fn layout_stretch(
 }
 
 fn extract_stretch_char(content: &Content) -> Option<char> {
-    content
-        .to_packed::<SymbolElem>()
-        .and_then(|sym| {
-            let mut cs = sym.text.chars();
-            let c = cs.next()?;
-            cs.next().is_none().then_some(c)
-        })
+    content.to_packed::<SymbolElem>().and_then(|sym| {
+        let mut cs = sym.text.chars();
+        let c = cs.next()?;
+        cs.next().is_none().then_some(c)
+    })
 }
 
 fn resolve_stretch_width(size: Rel<Length>, styles: StyleChain) -> Col {
@@ -237,7 +244,7 @@ pub fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
         // ── Bidirectional arrows ────────────────────────────────────────────
         '\u{2194}' => arrow_lr(w, '←', '─', '⟶', '<', '-', '>', mode),
         // '\u{21D4}' => arrow_lr(w, '⇐', '═', '⇒','<' ,'=', '>', mode),
-        '\u{21D4}' => arrow_lr(w, '<', '=', '>','<' ,'=', '>', mode),
+        '\u{21D4}' => arrow_lr(w, '<', '=', '>', '<', '=', '>', mode),
         // // ── Horizontal braces ───────────────────────────────────────────────
         // '\u{23DF}' => rep(mode.underbrace_char(), w),
         // '\u{23DE}' => rep(mode.overbrace_char(), w),
@@ -248,7 +255,14 @@ pub fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
     }
 }
 
-fn arrow_r(w: usize, uni_body: char, uni_head: char, ascii_body: char, ascii_head: char, mode: RenderMode) -> String {
+fn arrow_r(
+    w: usize,
+    uni_body: char,
+    uni_head: char,
+    ascii_body: char,
+    ascii_head: char,
+    mode: RenderMode,
+) -> String {
     if mode.is_unicode() {
         // ─────→  (body line + arrow head, at least 1 col for head)
         format!("{}{}", rep(uni_body, w.saturating_sub(1)), uni_head)
@@ -257,7 +271,14 @@ fn arrow_r(w: usize, uni_body: char, uni_head: char, ascii_body: char, ascii_hea
     }
 }
 
-fn arrow_l(w: usize, uni_head: char, uni_body: char, ascii_head: char, ascii_body: char, mode: RenderMode) -> String {
+fn arrow_l(
+    w: usize,
+    uni_head: char,
+    uni_body: char,
+    ascii_head: char,
+    ascii_body: char,
+    mode: RenderMode,
+) -> String {
     if mode.is_unicode() {
         // ←─────
         format!("{}{}", uni_head, rep(uni_body, w.saturating_sub(1)))
@@ -266,12 +287,25 @@ fn arrow_l(w: usize, uni_head: char, uni_body: char, ascii_head: char, ascii_bod
     }
 }
 
-fn arrow_lr(w: usize, uni_l: char, uni_body: char, uni_r: char, ascii_l: char, ascii_body: char, ascii_r: char, mode: RenderMode) -> String {
+fn arrow_lr(
+    w: usize,
+    uni_l: char,
+    uni_body: char,
+    uni_r: char,
+    ascii_l: char,
+    ascii_body: char,
+    ascii_r: char,
+    mode: RenderMode,
+) -> String {
     if mode.is_unicode() {
-
         format!("{}{}{}", uni_l, rep(uni_body, w.saturating_sub(2)), uni_r)
     } else {
-        format!("{}{}{}", ascii_l, rep(ascii_body, w.saturating_sub(2)), ascii_r)
+        format!(
+            "{}{}{}",
+            ascii_l,
+            rep(ascii_body, w.saturating_sub(2)),
+            ascii_r
+        )
     }
 }
 

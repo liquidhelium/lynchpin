@@ -242,10 +242,16 @@ pub fn layout_overshell(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn build_hdeco(width: Col,left: char,mid: char,right: char) -> TermFrame {
+fn build_hdeco(width: Col, left: char, mid: char, right: char) -> TermFrame {
     build_hdeco_center(width, left, mid, right, None)
 }
-fn build_hdeco_center(width: Col, left: char, mid: char, right: char, center: Option<char>) -> TermFrame {
+fn build_hdeco_center(
+    width: Col,
+    left: char,
+    mid: char,
+    right: char,
+    center: Option<char>,
+) -> TermFrame {
     let w = width.max(1);
     let mut f = TermFrame::new(TermSize::new(w, 1));
     if w == 1 {
@@ -370,7 +376,7 @@ fn overbracket_parts(m: RenderMode) -> (char, char, char) {
 }
 fn underparen_parts(m: RenderMode) -> (char, char, char) {
     if u(m) {
-        ('╰', '─', '╯',)
+        ('╰', '─', '╯')
     } else {
         ('(', '-', ')')
     }

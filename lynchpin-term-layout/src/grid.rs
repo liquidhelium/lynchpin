@@ -53,22 +53,34 @@ where
         let (x, y) = match (x_smart, y_smart) {
             (Smart::Custom(x), Smart::Custom(y)) => (x, y),
             (Smart::Custom(x), _) => {
-                let y_pos = placed.iter()
+                let y_pos = placed
+                    .iter()
                     .filter(|c| c.x == x)
-                    .map(|c| c.y + c.h).max().unwrap_or(0);
+                    .map(|c| c.y + c.h)
+                    .max()
+                    .unwrap_or(0);
                 (x, y_pos)
             }
             (_, Smart::Custom(y)) => (y, y),
             _ => {
                 let pos = (auto_x, auto_y);
                 auto_x += colspan;
-                if auto_x >= wrap_at { auto_x = 0; auto_y += 1; }
+                if auto_x >= wrap_at {
+                    auto_x = 0;
+                    auto_y += 1;
+                }
                 pos
             }
         };
 
         let frame = layout_paragraph(engine, &body, config, styles, ContentStyle::default())?;
-        placed.push(CellInfo { x, y, w: colspan.max(1), h: frame.rows().max(1) as usize, frame });
+        placed.push(CellInfo {
+            x,
+            y,
+            w: colspan.max(1),
+            h: frame.rows().max(1) as usize,
+            frame,
+        });
     }
 
     if placed.is_empty() {
@@ -90,21 +102,29 @@ where
         if cell.w > 1 {
             let used: Col = col_widths[cell.x..cell.x + cell.w].iter().sum();
             let need = cell.frame.cols() as Col;
-            if need > used { col_widths[cell.x + cell.w - 1] += need - used; }
+            if need > used {
+                col_widths[cell.x + cell.w - 1] += need - used;
+            }
         }
     }
-    for w in &mut col_widths { *w = (*w).max(1); }
+    for w in &mut col_widths {
+        *w = (*w).max(1);
+    }
 
     // ── Step 4: compute row heights ───────────────────────────────────────
     let mut row_heights: Vec<Row> = vec![1; nrows];
     for cell in &placed {
-        if cell.h == 1 { row_heights[cell.y] = row_heights[cell.y].max(cell.frame.rows()); }
+        if cell.h == 1 {
+            row_heights[cell.y] = row_heights[cell.y].max(cell.frame.rows());
+        }
     }
     for cell in &placed {
         if cell.h > 1 {
             let used: Row = row_heights[cell.y..cell.y + cell.h].iter().sum();
             let need = cell.frame.rows();
-            if need > used { row_heights[cell.y + cell.h - 1] += need - used; }
+            if need > used {
+                row_heights[cell.y + cell.h - 1] += need - used;
+            }
         }
     }
 
@@ -127,12 +147,23 @@ fn build_bordered_frame(
     config: &TermConfig,
 ) -> SourceResult<TermFrame> {
     let is_unicode = config.mode.is_unicode();
-    let (h, v, tl, tm, tr, ml, mm, mr, bl, bm, br): (char, char, char, char, char, char, char, char, char, char, char) =
-        if is_unicode {
-            ('─', '│', '┌', '┬', '┐', '├', '┼', '┤', '└', '┴', '┘')
-        } else {
-            ('-', '|', '+', '+', '+', '+', '+', '+', '+', '+', '+')
-        };
+    let (h, v, tl, tm, tr, ml, mm, mr, bl, bm, br): (
+        char,
+        char,
+        char,
+        char,
+        char,
+        char,
+        char,
+        char,
+        char,
+        char,
+        char,
+    ) = if is_unicode {
+        ('─', '│', '┌', '┬', '┐', '├', '┼', '┤', '└', '┴', '┘')
+    } else {
+        ('-', '|', '+', '+', '+', '+', '+', '+', '+', '+', '+')
+    };
 
     let total_cols: Col = col_widths.iter().sum::<Col>() + (ncols as Col + 1);
     let total_rows: Row = row_heights.iter().sum::<Row>() + (nrows as Row + 1);
@@ -142,13 +173,24 @@ fn build_bordered_frame(
     let mut x: Col = 0;
     for ci in 0..ncols {
         let ch = if ci == 0 { tl } else { tm };
-        frame.push_text(TermPoint::new(x, 0), ch.to_string(), ContentStyle::default());
+        frame.push_text(
+            TermPoint::new(x, 0),
+            ch.to_string(),
+            ContentStyle::default(),
+        );
         x += 1;
-        frame.push_text(TermPoint::new(x, 0),
-            repeat_char(h, col_widths[ci] as usize), ContentStyle::default());
+        frame.push_text(
+            TermPoint::new(x, 0),
+            repeat_char(h, col_widths[ci] as usize),
+            ContentStyle::default(),
+        );
         x += col_widths[ci];
     }
-    frame.push_text(TermPoint::new(x, 0), tr.to_string(), ContentStyle::default());
+    frame.push_text(
+        TermPoint::new(x, 0),
+        tr.to_string(),
+        ContentStyle::default(),
+    );
 
     let mut row_top: Row = 1;
     for ri in 0..nrows {
@@ -170,10 +212,18 @@ fn build_bordered_frame(
             let yr = row_top + r;
             let mut x: Col = 0;
             for ci in 0..ncols {
-                frame.push_text(TermPoint::new(x, yr), v.to_string(), ContentStyle::default());
+                frame.push_text(
+                    TermPoint::new(x, yr),
+                    v.to_string(),
+                    ContentStyle::default(),
+                );
                 x += 1 + col_widths[ci];
             }
-            frame.push_text(TermPoint::new(x, yr), v.to_string(), ContentStyle::default());
+            frame.push_text(
+                TermPoint::new(x, yr),
+                v.to_string(),
+                ContentStyle::default(),
+            );
         }
 
         row_top += rh;
@@ -183,13 +233,24 @@ fn build_bordered_frame(
             x = 0;
             for ci in 0..ncols {
                 let ch = if ci == 0 { ml } else { mm };
-                frame.push_text(TermPoint::new(x, row_top), ch.to_string(), ContentStyle::default());
+                frame.push_text(
+                    TermPoint::new(x, row_top),
+                    ch.to_string(),
+                    ContentStyle::default(),
+                );
                 x += 1;
-                frame.push_text(TermPoint::new(x, row_top),
-                    repeat_char(h, col_widths[ci] as usize), ContentStyle::default());
+                frame.push_text(
+                    TermPoint::new(x, row_top),
+                    repeat_char(h, col_widths[ci] as usize),
+                    ContentStyle::default(),
+                );
                 x += col_widths[ci];
             }
-            frame.push_text(TermPoint::new(x, row_top), mr.to_string(), ContentStyle::default());
+            frame.push_text(
+                TermPoint::new(x, row_top),
+                mr.to_string(),
+                ContentStyle::default(),
+            );
             row_top += 1;
         }
     }
@@ -198,13 +259,24 @@ fn build_bordered_frame(
     x = 0;
     for ci in 0..ncols {
         let ch = if ci == 0 { bl } else { bm };
-        frame.push_text(TermPoint::new(x, row_top), ch.to_string(), ContentStyle::default());
+        frame.push_text(
+            TermPoint::new(x, row_top),
+            ch.to_string(),
+            ContentStyle::default(),
+        );
         x += 1;
-        frame.push_text(TermPoint::new(x, row_top),
-            repeat_char(h, col_widths[ci] as usize), ContentStyle::default());
+        frame.push_text(
+            TermPoint::new(x, row_top),
+            repeat_char(h, col_widths[ci] as usize),
+            ContentStyle::default(),
+        );
         x += col_widths[ci];
     }
-    frame.push_text(TermPoint::new(x, row_top), br.to_string(), ContentStyle::default());
+    frame.push_text(
+        TermPoint::new(x, row_top),
+        br.to_string(),
+        ContentStyle::default(),
+    );
 
     Ok(frame)
 }

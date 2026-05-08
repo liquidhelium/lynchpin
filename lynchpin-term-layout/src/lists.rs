@@ -27,8 +27,7 @@ pub fn render_list_item(
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let prefix = TermFrame::text("• ", ContentStyle::default());
-    let body_frame =
-        layout_paragraph(engine, body, config, styles, ContentStyle::default())?;
+    let body_frame = layout_paragraph(engine, body, config, styles, ContentStyle::default())?;
     Ok(compose_horizontal(vec![prefix, body_frame], 0))
 }
 
@@ -63,8 +62,7 @@ pub fn render_enum_item(
     };
 
     let prefix = TermFrame::text(format!("{n}. "), ContentStyle::default());
-    let body_frame =
-        layout_paragraph(engine, body, config, styles, ContentStyle::default())?;
+    let body_frame = layout_paragraph(engine, body, config, styles, ContentStyle::default())?;
     Ok(compose_horizontal(vec![prefix, body_frame], 0))
 }
 
@@ -84,9 +82,12 @@ pub fn render_term_item(
     let mut term_style = ContentStyle::default();
     term_style.attributes.set(Attribute::Bold);
 
-    let term_frame  = layout_paragraph(engine, term, config, styles, term_style)?;
-    let sep_frame   = TermFrame::text(": ", ContentStyle::default());
-    let desc_frame  = layout_paragraph(engine, desc, config, styles, ContentStyle::default())?;
+    let term_frame = layout_paragraph(engine, term, config, styles, term_style)?;
+    let sep_frame = TermFrame::text(": ", ContentStyle::default());
+    let desc_frame = layout_paragraph(engine, desc, config, styles, ContentStyle::default())?;
 
-    Ok(compose_horizontal(vec![term_frame, sep_frame, desc_frame], 0))
+    Ok(compose_horizontal(
+        vec![term_frame, sep_frame, desc_frame],
+        0,
+    ))
 }

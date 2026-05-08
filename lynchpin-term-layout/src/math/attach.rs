@@ -11,8 +11,8 @@ use crate::frame::{Col, Row, TermFrame, TermPoint, TermSize};
 use crate::stack::{compose_horizontal, compose_vertical};
 
 use super::{TermLimits, TermMathContext, TermMathFragment, TermMathFrameFragment};
-use crossterm::style::ContentStyle;
 use crate::pad;
+use crossterm::style::ContentStyle;
 
 // ── layout_attach ─────────────────────────────────────────────────────────────
 
@@ -39,8 +39,8 @@ pub fn layout_attach(
     // ── Collect attachments ───────────────────────────────────────────────────
     // For `t` / `b` we prefer the dedicated slot over tr / br when limits are
     // active, mirroring the typst-layout logic.
-    let t_content  = elem.t.get_cloned(styles);
-    let b_content  = elem.b.get_cloned(styles);
+    let t_content = elem.t.get_cloned(styles);
+    let b_content = elem.b.get_cloned(styles);
     let tr_content = elem.tr.get_cloned(styles);
     let br_content = elem.br.get_cloned(styles);
     let tl_content = elem.tl.get_cloned(styles);
@@ -56,8 +56,8 @@ pub fn layout_attach(
         // In scripts mode `t` is an alias for `tr`
         let combined_tr = match (t_content, tr_content) {
             (Some(t), Some(tr)) => Some(Content::sequence([tr, t])),
-            (Some(t), None)     => Some(t),
-            (None, tr)          => tr,
+            (Some(t), None) => Some(t),
+            (None, tr) => tr,
         };
         (None, combined_tr)
     };
@@ -68,8 +68,8 @@ pub fn layout_attach(
         // In scripts mode `b` is an alias for `br`
         let combined_br = match (b_content, br_content) {
             (Some(b), Some(br)) => Some(Content::sequence([br, b])),
-            (Some(b), None)     => Some(b),
-            (None, br)          => br,
+            (Some(b), None) => Some(b),
+            (None, br) => br,
         };
         (None, combined_br)
     };
@@ -77,14 +77,26 @@ pub fn layout_attach(
     // ── Horizontal stretch for stretch(=) inside limits ────────────────────
     let mut base_frag = base_frag;
     if let Some(stretch) = stretch_base(&elem.base, styles) {
-        let above_frame = above.as_ref().map(|c| ctx.layout_into_frame(c, styles)).transpose().ok().flatten();
-        let below_frame = below.as_ref().map(|c| ctx.layout_into_frame(c, styles)).transpose().ok().flatten();
-        let rel_w_cols = above_frame.as_ref().map(|f| f.cols())
+        let above_frame = above
+            .as_ref()
+            .map(|c| ctx.layout_into_frame(c, styles))
+            .transpose()
+            .ok()
+            .flatten();
+        let below_frame = below
+            .as_ref()
+            .map(|c| ctx.layout_into_frame(c, styles))
+            .transpose()
+            .ok()
+            .flatten();
+        let rel_w_cols = above_frame
+            .as_ref()
+            .map(|f| f.cols())
             .max(below_frame.as_ref().map(|f| f.cols()))
             .unwrap_or(1);
         // Convert rel_w_cols to Abs (1 col ≈ font size)
-        use typst::layout::Abs;
         use typst::foundations::Resolve;
+        use typst::layout::Abs;
         use typst::text::TextElem;
         let font_size: Abs = styles.get(TextElem::size).resolve(styles);
         let rel_w_abs = font_size * rel_w_cols as f64;
@@ -103,7 +115,8 @@ pub fn layout_attach(
 
     if use_limits {
         layout_limits_mode(
-            ctx, styles,
+            ctx,
+            styles,
             base_frag,
             above.as_ref(),
             below.as_ref(),
@@ -114,7 +127,8 @@ pub fn layout_attach(
         )
     } else {
         layout_scripts_mode(
-            ctx, styles,
+            ctx,
+            styles,
             base_frag,
             top_right.as_ref(),
             bot_right.as_ref(),
@@ -143,13 +157,19 @@ fn layout_limits_mode(
     br: Option<&typst::foundations::Content>,
 ) -> SourceResult<()> {
     // Layout optional limit fragments.
-    let above_frame = above.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
-    let below_frame = below.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
+    let above_frame = above
+        .map(|c| ctx.layout_into_frame(c, styles))
+        .transpose()?;
+    let below_frame = below
+        .map(|c| ctx.layout_into_frame(c, styles))
+        .transpose()?;
 
     let base_frame = base_frag.into_frame();
 
     // Center above/below relative to base width.
-    let limit_width = above_frame.as_ref().map(|f| f.cols())
+    let limit_width = above_frame
+        .as_ref()
+        .map(|f| f.cols())
         .max(below_frame.as_ref().map(|f| f.cols()))
         .unwrap_or(0)
         .max(base_frame.cols());
@@ -161,25 +181,53 @@ fn layout_limits_mode(
     if let Some(af) = above_frame {
         let ac = af.cols();
         let pad = (limit_width - ac).max(0) / 2;
-        frames.push(if pad > 0 { pad::pad_h(af, pad, limit_width - ac - pad) } else { af });
+        frames.push(if pad > 0 {
+            pad::pad_h(af, pad, limit_width - ac - pad)
+        } else {
+            af
+        });
         baseline_idx = 1;
     }
     let bc = base_frame.cols();
     let pad = (limit_width - bc).max(0) / 2;
-    frames.push(if pad > 0 { pad::pad_h(base_frame, pad, limit_width - bc - pad) } else { base_frame });
+    frames.push(if pad > 0 {
+        pad::pad_h(base_frame, pad, limit_width - bc - pad)
+    } else {
+        base_frame
+    });
     if let Some(bf) = below_frame {
         let bfc = bf.cols();
         let pad = (limit_width - bfc).max(0) / 2;
-        frames.push(if pad > 0 { pad::pad_h(bf, pad, limit_width - bfc - pad) } else { bf });
+        frames.push(if pad > 0 {
+            pad::pad_h(bf, pad, limit_width - bfc - pad)
+        } else {
+            bf
+        });
     }
 
-    let stack = compose_vertical(frames, /*gap=*/0, baseline_idx);
+    let stack = compose_vertical(frames, /*gap=*/ 0, baseline_idx);
 
     // Handle pre-scripts (tl, bl) to the left.
-    let pre_frame = build_pre_scripts(ctx, styles, stack.cols(), stack.rows(), stack.baseline(), tl, bl)?;
+    let pre_frame = build_pre_scripts(
+        ctx,
+        styles,
+        stack.cols(),
+        stack.rows(),
+        stack.baseline(),
+        tl,
+        bl,
+    )?;
 
     // Handle post-scripts (tr, br) to the right if also present.
-    let post_frame = build_post_scripts(ctx, styles, stack.cols(), stack.rows(), stack.baseline(), tr, br)?;
+    let post_frame = build_post_scripts(
+        ctx,
+        styles,
+        stack.cols(),
+        stack.rows(),
+        stack.baseline(),
+        tr,
+        br,
+    )?;
 
     let final_frame = assemble_with_pre_post(pre_frame, stack, post_frame);
     ctx.push(TermMathFrameFragment::new(final_frame));
@@ -201,8 +249,25 @@ fn layout_scripts_mode(
     let italics = base_frag.italics_correction();
     let base_frame = base_frag.into_frame();
 
-    let pre_frame = build_pre_scripts(ctx, styles, base_frame.cols(), base_frame.rows(), base_frame.baseline(), tl, bl)?;
-    let post_frame = build_post_scripts_with_ic(ctx, styles, base_frame.cols(), base_frame.rows(), base_frame.baseline(), tr, br, italics)?;
+    let pre_frame = build_pre_scripts(
+        ctx,
+        styles,
+        base_frame.cols(),
+        base_frame.rows(),
+        base_frame.baseline(),
+        tl,
+        bl,
+    )?;
+    let post_frame = build_post_scripts_with_ic(
+        ctx,
+        styles,
+        base_frame.cols(),
+        base_frame.rows(),
+        base_frame.baseline(),
+        tr,
+        br,
+        italics,
+    )?;
 
     let final_frame = assemble_with_pre_post(pre_frame, base_frame, post_frame);
     ctx.push(TermMathFrameFragment::new(final_frame));
@@ -228,7 +293,9 @@ fn build_pre_scripts(
     let tl_frame = tl.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
     let bl_frame = bl.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
 
-    let script_cols: Col = tl_frame.as_ref().map(|f| f.cols())
+    let script_cols: Col = tl_frame
+        .as_ref()
+        .map(|f| f.cols())
         .max(bl_frame.as_ref().map(|f| f.cols()))
         .unwrap_or(0);
 
@@ -286,7 +353,9 @@ fn build_post_scripts_with_ic(
     let tr_frame = tr.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
     let br_frame = br.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
 
-    let script_cols: Col = tr_frame.as_ref().map(|f| f.cols())
+    let script_cols: Col = tr_frame
+        .as_ref()
+        .map(|f| f.cols())
         .max(br_frame.as_ref().map(|f| f.cols()))
         .unwrap_or(0);
 
@@ -326,7 +395,9 @@ fn assemble_with_pre_post(
     post: Option<TermFrame>,
 ) -> TermFrame {
     // Shift base content to align baseline with pre/post scripts.
-    let target_bl = pre.as_ref().map(|f| f.baseline())
+    let target_bl = pre
+        .as_ref()
+        .map(|f| f.baseline())
         .max(post.as_ref().map(|f| f.baseline()))
         .unwrap_or(0);
     let shift = target_bl - base.baseline();
@@ -336,9 +407,13 @@ fn assemble_with_pre_post(
     }
 
     let mut parts: Vec<TermFrame> = Vec::new();
-    if let Some(p) = pre  { parts.push(p); }
+    if let Some(p) = pre {
+        parts.push(p);
+    }
     parts.push(base);
-    if let Some(p) = post { parts.push(p); }
+    if let Some(p) = post {
+        parts.push(p);
+    }
 
     if parts.len() == 1 {
         return parts.into_iter().next().unwrap();
@@ -366,20 +441,15 @@ pub fn layout_primes(
         _ => {
             // Emit `count` individual prime symbols.
             for _ in 0..count {
-                let frag = ctx.layout_into_fragment(
-                    &SymbolElem::packed('′').spanned(elem.span()),
-                    styles,
-                )?;
+                let frag = ctx
+                    .layout_into_fragment(&SymbolElem::packed('′').spanned(elem.span()), styles)?;
                 ctx.push(frag);
             }
             return Ok(());
         }
     };
 
-    let frag = ctx.layout_into_fragment(
-        &SymbolElem::packed(ch).spanned(elem.span()),
-        styles,
-    )?;
+    let frag = ctx.layout_into_fragment(&SymbolElem::packed(ch).spanned(elem.span()), styles)?;
     ctx.push(frag);
     Ok(())
 }
@@ -425,11 +495,12 @@ pub fn layout_limits(
 
 // ── Content sequence helper ───────────────────────────────────────────────────
 
-
-
 // ── Horizontal stretch helpers ────────────────────────────────────────────────
 
-fn stretch_base(base: &Content, styles: StyleChain) -> Option<typst::layout::Rel<typst::layout::Abs>> {
+fn stretch_base(
+    base: &Content,
+    styles: StyleChain,
+) -> Option<typst::layout::Rel<typst::layout::Abs>> {
     let mut b = base;
     // Unwrap transparent wrappers: LimitsElem, ScriptsElem, EquationElem
     loop {

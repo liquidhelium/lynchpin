@@ -27,7 +27,12 @@ pub fn layout_vec(
     if elem.children.is_empty() {
         let delim = elem.delim.get(styles);
         let empty = TermFrame::new(TermSize::new(1, 1));
-        ctx.push(wrap_with_delimiters(ctx, empty, delim.open(), delim.close()));
+        ctx.push(wrap_with_delimiters(
+            ctx,
+            empty,
+            delim.open(),
+            delim.close(),
+        ));
         return Ok(());
     }
 
@@ -57,7 +62,12 @@ pub fn layout_mat(
     if elem.rows.is_empty() {
         let delim = elem.delim.get(styles);
         let empty = TermFrame::new(TermSize::new(1, 1));
-        ctx.push(wrap_with_delimiters(ctx, empty, delim.open(), delim.close()));
+        ctx.push(wrap_with_delimiters(
+            ctx,
+            empty,
+            delim.open(),
+            delim.close(),
+        ));
         return Ok(());
     }
 
@@ -77,7 +87,12 @@ pub fn layout_mat(
     if num_cols == 0 {
         let delim = elem.delim.get(styles);
         let empty = TermFrame::new(TermSize::new(1, 1));
-        ctx.push(wrap_with_delimiters(ctx, empty, delim.open(), delim.close()));
+        ctx.push(wrap_with_delimiters(
+            ctx,
+            empty,
+            delim.open(),
+            delim.close(),
+        ));
         return Ok(());
     }
 
@@ -102,10 +117,10 @@ pub fn layout_mat(
     let col_gap: Col = 1;
     let row_gap: Row = 1;
 
-    let total_cols: Col = col_widths.iter().sum::<Col>()
-        + col_gap * (num_cols.saturating_sub(1)) as Col;
-    let total_rows: Row = row_heights.iter().sum::<Row>()
-        + row_gap * (num_rows.saturating_sub(1)) as Row;
+    let total_cols: Col =
+        col_widths.iter().sum::<Col>() + col_gap * (num_cols.saturating_sub(1)) as Col;
+    let total_rows: Row =
+        row_heights.iter().sum::<Row>() + row_gap * (num_rows.saturating_sub(1)) as Row;
 
     // Baseline at the vertical centre of the matrix.
     let baseline: Row = (total_rows / 2).max(0);
@@ -172,10 +187,7 @@ pub fn layout_cases(
 ///
 /// * `reverse: false` — `{` on the left, nothing on the right.
 /// * `reverse: true`  — nothing on the left, `{` on the right.
-fn cases_delimiters(
-    delim_open: Option<char>,
-    reverse: bool,
-) -> (Option<char>, Option<char>) {
+fn cases_delimiters(delim_open: Option<char>, reverse: bool) -> (Option<char>, Option<char>) {
     if reverse {
         (None, delim_open)
     } else {

@@ -1,4 +1,3 @@
-
 pub mod document;
 
 pub mod term;
@@ -7,7 +6,13 @@ pub mod compile {
     use comemo::{Track, Tracked};
     use rustc_hash::FxHashSet;
     use typst::{
-        __warning, ROUTINES, World, diag::{FileError, SourceDiagnostic, SourceResult, Warned}, ecow::{EcoString, EcoVec, eco_format, eco_vec}, engine::{Engine, Route, Sink, Traced}, foundations::{StyleChain, Styles, Target, TargetElem, Value}, introspection::Introspector, syntax::{FileId, Span}
+        __warning, ROUTINES, World,
+        diag::{FileError, SourceDiagnostic, SourceResult, Warned},
+        ecow::{EcoString, EcoVec, eco_format, eco_vec},
+        engine::{Engine, Route, Sink, Traced},
+        foundations::{StyleChain, Styles, Target, TargetElem, Value},
+        introspection::Introspector,
+        syntax::{FileId, Span},
     };
 
     use crate::{document::term_document, term::TermDocument};

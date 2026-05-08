@@ -35,9 +35,13 @@ pub enum RenderMode {
 
 impl RenderMode {
     #[inline]
-    pub fn is_unicode(self) -> bool { self == RenderMode::Unicode }
+    pub fn is_unicode(self) -> bool {
+        self == RenderMode::Unicode
+    }
     #[inline]
-    pub fn is_ascii(self) -> bool { self == RenderMode::Ascii }
+    pub fn is_ascii(self) -> bool {
+        self == RenderMode::Ascii
+    }
 
     // ── Fraction / rule characters ────────────────────────────────────────────
 
@@ -203,9 +207,21 @@ impl RenderMode {
     /// mid/Σ, diagonal-bot, bottom).
     pub fn sum_chars(self) -> SumChars {
         if self.is_unicode() {
-            SumChars { top: '─', diag_top: '╲', mid: 'Σ', diag_bot: '╱', bot: '─' }
+            SumChars {
+                top: '─',
+                diag_top: '╲',
+                mid: 'Σ',
+                diag_bot: '╱',
+                bot: '─',
+            }
         } else {
-            SumChars { top: '_', diag_top: '\\', mid: 'E', diag_bot: '/', bot: '_' }
+            SumChars {
+                top: '_',
+                diag_top: '\\',
+                mid: 'E',
+                diag_bot: '/',
+                bot: '_',
+            }
         }
     }
 
@@ -213,18 +229,34 @@ impl RenderMode {
     /// separator char).
     pub fn prod_chars(self) -> ProdChars {
         if self.is_unicode() {
-            ProdChars { top: '─', vert: '│', base: '─' }
+            ProdChars {
+                top: '─',
+                vert: '│',
+                base: '─',
+            }
         } else {
-            ProdChars { top: '_', vert: '|', base: '_' }
+            ProdChars {
+                top: '_',
+                vert: '|',
+                base: '_',
+            }
         }
     }
 
     /// Integral sign characters: top, middle (repeated), bottom.
     pub fn integral_chars(self) -> IntegralChars {
         if self.is_unicode() {
-            IntegralChars { top: '⌠', mid: '│', bot: '⌡' }
+            IntegralChars {
+                top: '⌠',
+                mid: '│',
+                bot: '⌡',
+            }
         } else {
-            IntegralChars { top: '/', mid: '|', bot: '\\' }
+            IntegralChars {
+                top: '/',
+                mid: '|',
+                bot: '\\',
+            }
         }
     }
 
@@ -236,23 +268,23 @@ impl RenderMode {
 
     /// Character to use for a hat (^) accent.
     pub fn hat_char(self) -> char {
-        if self.is_unicode() { '̂' } else { '^' }  // combining circumflex
+        if self.is_unicode() { '̂' } else { '^' } // combining circumflex
     }
 
     pub fn tilde_char(self) -> char {
-        if self.is_unicode() { '̃' } else { '~' }  // combining tilde
+        if self.is_unicode() { '̃' } else { '~' } // combining tilde
     }
 
     pub fn dot_char(self) -> char {
-        if self.is_unicode() { '̇' } else { '.' }  // combining dot above
+        if self.is_unicode() { '̇' } else { '.' } // combining dot above
     }
 
     pub fn ddot_char(self) -> char {
-        if self.is_unicode() { '̈' } else { '"' }  // combining diaeresis
+        if self.is_unicode() { '̈' } else { '"' } // combining diaeresis
     }
 
     pub fn bar_accent_char(self) -> char {
-        if self.is_unicode() { '̄' } else { '-' }  // combining macron
+        if self.is_unicode() { '̄' } else { '-' } // combining macron
     }
 
     pub fn arrow_over_char(self) -> char {
@@ -366,6 +398,10 @@ pub struct TermConfig {
 
 impl Default for TermConfig {
     fn default() -> Self {
-        Self { mode: RenderMode::Unicode, width: Some(80), indent: 2 }
+        Self {
+            mode: RenderMode::Unicode,
+            width: Some(80),
+            indent: 2,
+        }
     }
 }

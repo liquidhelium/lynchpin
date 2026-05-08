@@ -9,19 +9,21 @@
 //! math element type, accumulating [`TermMathFragment`]s that are then
 //! composed into a [`TermFrame`] by [`TermMathRun`].
 
+pub mod accent;
+pub mod attach;
+pub mod cancel;
+pub mod frac;
 pub mod fragment;
+pub mod lr;
+pub mod mat;
+pub mod operators;
+pub mod root;
 pub mod run;
 pub mod text;
-pub mod operators;
-pub mod frac;
-pub mod root;
-pub mod attach;
-pub mod lr;
 pub mod underover;
-pub mod cancel;
-pub mod accent;
-pub mod mat;
 
+use crate::config::TermConfig;
+use crate::frame::{TermFrame, TermSize};
 use crossterm::style::ContentStyle;
 use ecow::EcoString;
 use typst::diag::SourceResult;
@@ -31,16 +33,14 @@ use typst::layout::HideElem;
 use typst::layout::{BoxElem, HElem};
 use typst::math::{
     AccentElem, AlignPointElem, AttachElem, BinomElem, CancelElem, CasesElem, ClassElem,
-    EquationElem, FracElem, LimitsElem, LrElem, MatElem, MathSize, MidElem, OpElem,
-    OverbraceElem, OverbracketElem, OverlineElem, OverparenElem, OvershellElem, PrimesElem,
-    RootElem, ScriptsElem, StretchElem, UnderbraceElem, UnderbracketElem, UnderlineElem,
-    UnderparenElem, UndershellElem, VecElem,
+    EquationElem, FracElem, LimitsElem, LrElem, MatElem, MathSize, MidElem, OpElem, OverbraceElem,
+    OverbracketElem, OverlineElem, OverparenElem, OvershellElem, PrimesElem, RootElem, ScriptsElem,
+    StretchElem, UnderbraceElem, UnderbracketElem, UnderlineElem, UnderparenElem, UndershellElem,
+    VecElem,
 };
-use typst::text::{LinebreakElem, SpaceElem};
-use crate::config::TermConfig;
-use typst::routines::Arenas;
 use typst::model::DocumentInfo;
-use crate::frame::{TermFrame, TermSize};
+use typst::routines::Arenas;
+use typst::text::{LinebreakElem, SpaceElem};
 
 pub use self::fragment::{TermLimits, TermMathFragment, TermMathFrameFragment};
 pub use self::run::TermMathRun;
@@ -70,12 +70,13 @@ pub struct TermMathContext<'cfg, 'eng, 'e> {
 
 impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
     /// Create a new math context.
-    pub fn new(
-        engine: &'eng mut Engine<'e>,
-        config: &'cfg TermConfig,
-        is_display: bool,
-    ) -> Self {
-        Self { engine, config, is_display, fragments: Vec::new() }
+    pub fn new(engine: &'eng mut Engine<'e>, config: &'cfg TermConfig, is_display: bool) -> Self {
+        Self {
+            engine,
+            config,
+            is_display,
+            fragments: Vec::new(),
+        }
     }
 
     // ── Fragment accumulation ─────────────────────────────────────────────────
@@ -98,7 +99,9 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
         content: &Content,
         styles: StyleChain,
     ) -> SourceResult<TermMathRun> {
-        Ok(TermMathRun::new(self.layout_into_fragments(content, styles)?))
+        Ok(TermMathRun::new(
+            self.layout_into_fragments(content, styles)?,
+        ))
     }
 
     /// Layout `content`, returning the raw fragment list.
@@ -139,15 +142,15 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
     ///
     /// This properly handles show rules, location assignment (needed for
     /// ContextElem), and element preparation inside math formulas.
-    pub fn layout_into_self(
-        &mut self,
-        content: &Content,
-        styles: StyleChain,
-    ) -> SourceResult<()> {
+    pub fn layout_into_self(&mut self, content: &Content, styles: StyleChain) -> SourceResult<()> {
         let arenas = Arenas::default();
         let mut info = DocumentInfo::default();
         let pairs = lynchpin_term_realize::realize_term(
-            self.engine, &arenas, &mut info, content, styles,
+            self.engine,
+            &arenas,
+            &mut info,
+            content,
+            styles,
             lynchpin_term_realize::TermRealizationKind::Math,
         )?;
         for (elem, pair_styles) in pairs {
@@ -198,12 +201,7 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
     }
 
     /// Dispatch a single element to the appropriate layout handler.
-    fn dispatch_element(
-        &mut self,
-        content: &Content,
-        styles: StyleChain,
-    ) -> SourceResult<()> {
-
+    fn dispatch_element(&mut self, content: &Content, styles: StyleChain) -> SourceResult<()> {
         // ── Whitespace & structural ───────────────────────────────────────────
 
         if content.is::<SpaceElem>() {
@@ -406,10 +404,11 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             return Ok(());
         }
 
-
         // ── Unknown: try to recurse, then emit placeholder ──────────────────
         if let Some(seq) = content.to_packed::<SequenceElem>() {
-            for ch in &seq.children { self.dispatch_element(ch, styles)?; }
+            for ch in &seq.children {
+                self.dispatch_element(ch, styles)?;
+            }
             return Ok(());
         }
         if let Some(s) = content.to_packed::<StyledElem>() {
@@ -418,8 +417,11 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
         }
         if let Some(eq) = content.to_packed::<EquationElem>() {
             let nested = eq.block.get(styles);
-            let size_style = if nested { EquationElem::size.set(MathSize::Display).wrap() }
-                                 else { EquationElem::size.set(MathSize::Text).wrap() };
+            let size_style = if nested {
+                EquationElem::size.set(MathSize::Display).wrap()
+            } else {
+                EquationElem::size.set(MathSize::Text).wrap()
+            };
             self.dispatch_element(&eq.body, styles.chain(&size_style))?;
             return Ok(());
         }
@@ -497,8 +499,7 @@ pub fn layout_equation_block(
         let frame = run.into_frame();
         // Pad block equations with 1 blank column on each side for readability.
         if frame.cols() > 0 {
-            let mut padded =
-                TermFrame::new(TermSize::new(frame.cols() + 2, frame.rows().max(1)));
+            let mut padded = TermFrame::new(TermSize::new(frame.cols() + 2, frame.rows().max(1)));
             padded.set_baseline(frame.baseline());
             padded.push_frame(crate::frame::TermPoint::new(1, 0), frame);
             Ok(padded)

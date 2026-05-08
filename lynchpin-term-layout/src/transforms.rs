@@ -99,7 +99,7 @@ pub fn layout_rotate(
     // Check if the angle is close to a quarter-turn.
     let angle_deg = elem.angle.get(styles).to_deg();
     let norm = ((angle_deg % 360.0) + 360.0) % 360.0; // normalise to [0, 360)
-    let near_90  = (norm -  90.0).abs() < 10.0;
+    let near_90 = (norm - 90.0).abs() < 10.0;
     let near_270 = (norm - 270.0).abs() < 10.0;
 
     if near_90 || near_270 {
