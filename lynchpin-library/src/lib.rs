@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod frame;
+pub mod regions;
 pub mod units;
 
 use std::fmt::Debug;

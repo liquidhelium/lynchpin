@@ -4,8 +4,243 @@
 //! correct baseline alignment and centering.
 
 use crossterm::style::ContentStyle;
+use typst::diag::SourceResult;
+use typst::engine::Engine;
+use typst::foundations::{Content, Packed, Resolve, StyleChain};
+use typst::layout::{AlignElem, Axes, Axis, Dir, FixedAlignment, Fr, HElem, Spacing, StackChild, StackElem, VElem};
 
-use crate::frame::{Col, Row, TermFrame, TermPoint, TermSize};
+use lynchpin_library::frame::{Col, Row, TermFrame, TermPoint, TermSize};
+use lynchpin_library::regions::TermRegions;
+use lynchpin_library::units;
+
+use crate::config::TermConfig;
+use crate::flow;
+
+pub fn layout_stack(
+    elem: &Packed<StackElem>,
+    engine: &mut Engine,
+    config: &TermConfig,
+    styles: StyleChain,
+) -> SourceResult<TermFrame> {
+    let dir = elem.dir.get(styles);
+    let axis = dir.axis();
+    let spacing = elem.spacing.get(styles);
+
+    // Create a single region using terminal width.
+    let size = TermSize::new(config.width.unwrap_or(80) as Col, i32::MAX);
+    let expand = Axes::splat(false);
+    let regions = TermRegions::one(size, expand);
+    let mut layouter = StackLayouter::new(dir, regions, styles);
+    let mut deferred = None;
+
+    for child in &elem.children {
+        match child {
+            StackChild::Spacing(kind) => {
+                layouter.layout_spacing(*kind);
+                deferred = None;
+            }
+            StackChild::Block(block) => {
+                // Transparent HElem/VElem.
+                if axis == Axis::X {
+                    if let Some(h) = block.to_packed::<HElem>() {
+                        layouter.layout_spacing(h.amount);
+                        deferred = None;
+                        continue;
+                    }
+                }
+                if axis == Axis::Y {
+                    if let Some(v) = block.to_packed::<VElem>() {
+                        layouter.layout_spacing(v.amount);
+                        deferred = None;
+                        continue;
+                    }
+                }
+
+                if let Some(kind) = deferred {
+                    layouter.layout_spacing(kind);
+                }
+                layouter.layout_block(engine, block, styles, config)?;
+                deferred = spacing;
+            }
+        }
+    }
+
+    Ok(layouter.finish())
+}
+
+struct StackLayouter<'a> {
+    dir: Dir,
+    axis: Axis,
+    regions: TermRegions,
+    styles: StyleChain<'a>,
+    initial: TermSize,
+    used_main: Row,
+    used_cross: Col,
+    fr: Fr,
+    items: Vec<StackItem>,
+}
+
+enum StackItem {
+    Absolute(Row),
+    Fractional(Fr),
+    Frame(TermFrame, Axes<FixedAlignment>),
+}
+
+impl<'a> StackLayouter<'a> {
+    fn new(dir: Dir, regions: TermRegions, styles: StyleChain<'a>) -> Self {
+        let axis = dir.axis();
+        let initial = regions.base();
+        Self {
+            dir,
+            axis,
+            regions,
+            styles,
+            initial,
+            used_main: 0,
+            used_cross: 0,
+            fr: Fr::zero(),
+            items: Vec::new(),
+        }
+    }
+
+    fn layout_spacing(&mut self, spacing: Spacing) {
+        match spacing {
+            Spacing::Rel(v) => {
+                let cells = units::rel_to_cols(&v, self.styles) as Row;
+                let remaining = match self.axis {
+                    Axis::X => &mut self.regions.size.cols,
+                    Axis::Y => &mut self.regions.size.rows,
+                };
+                let limited = cells.min(*remaining);
+                *remaining -= limited;
+                self.used_main += limited;
+                self.items.push(StackItem::Absolute(limited));
+            }
+            Spacing::Fr(v) => {
+                self.fr += v;
+                self.items.push(StackItem::Fractional(v));
+            }
+        }
+    }
+
+    fn layout_block(
+        &mut self,
+        engine: &mut Engine,
+        block: &Content,
+        styles: StyleChain,
+        config: &TermConfig,
+    ) -> SourceResult<()> {
+        // Resolve alignment.
+        let align = block.to_packed::<AlignElem>()
+            .map(|a| a.alignment.get(styles))
+            .unwrap_or_else(|| styles.get(AlignElem::alignment))
+            .resolve(styles);
+
+        let frame = flow::layout_block(engine, block, config, styles)?;
+        let sz = frame.size();
+
+        if self.axis == Axis::Y {
+            self.regions.size.rows -= sz.rows;
+        } else {
+            self.regions.size.cols -= sz.cols;
+        }
+        self.used_main += match self.axis {
+            Axis::X => sz.cols,
+            Axis::Y => sz.rows,
+        };
+        self.used_cross = self.used_cross.max(match self.axis {
+            Axis::X => sz.rows,
+            Axis::Y => sz.cols,
+        });
+        self.items.push(StackItem::Frame(frame, align));
+
+        Ok(())
+    }
+
+    fn finish(mut self) -> TermFrame {
+        let full_main = match self.axis {
+            Axis::X => self.initial.cols,
+            Axis::Y => self.initial.rows,
+        };
+        let remaining = (full_main - self.used_main).max(0);
+        let total_fr = self.fr;
+
+        // Expand to fill if fr spacings exist.
+        let actual_main = if total_fr != Fr::zero() && remaining > 0 {
+            full_main
+        } else {
+            self.used_main
+        };
+
+        let total_cols = match self.axis {
+            Axis::X => actual_main,
+            Axis::Y => self.used_cross.max(1),
+        };
+        let total_rows = match self.axis {
+            Axis::Y => actual_main,
+            Axis::X => self.used_cross.max(1),
+        };
+
+        let mut frame = TermFrame::new(TermSize::new(total_cols, total_rows));
+        let mut cursor: Row = 0;
+
+        for item in self.items {
+            match item {
+                StackItem::Absolute(v) => cursor += v,
+                StackItem::Fractional(v) => {
+                    if total_fr != Fr::zero() {
+                        let share = remaining as f64 * (v.get() as f64 / total_fr.get() as f64);
+                        cursor += share.round() as Row;
+                    }
+                }
+                StackItem::Frame(f, align) => {
+                    let child_sz = f.size();
+                    let used = actual_main - self.used_main;
+                    let main_pos = align_main(self.dir, align, self.axis, used) + cursor;
+                    let cross_pos = align_cross(align, self.axis, total_cols, total_rows, child_sz.cols, child_sz.rows);
+                    let (x, y) = match self.axis {
+                        Axis::X => (main_pos, cross_pos),
+                        Axis::Y => (cross_pos, main_pos),
+                    };
+                    frame.push_frame(TermPoint::new(x, y), f);
+                    cursor += match self.axis {
+                        Axis::X => child_sz.cols,
+                        Axis::Y => child_sz.rows,
+                    };
+                }
+            }
+        }
+
+        frame
+    }
+}
+
+fn align_main(_dir: Dir, align: Axes<FixedAlignment>, axis: Axis, used: Row) -> Row {
+    let a = match axis { Axis::X => align.x, Axis::Y => align.y };
+    match a {
+        FixedAlignment::Start => 0,
+        FixedAlignment::Center => used / 2,
+        FixedAlignment::End => used,
+        _ => 0,
+    }
+}
+
+fn align_cross(
+    align: Axes<FixedAlignment>, axis: Axis,
+    total_cols: Col, total_rows: Row,
+    child_cols: Col, child_rows: Row,
+) -> Row {
+    let a = match axis { Axis::X => align.y, Axis::Y => align.x };
+    let cross = match axis { Axis::X => Axis::Y, Axis::Y => Axis::X };
+    let available = match cross { Axis::X => total_cols, Axis::Y => total_rows };
+    let child = match cross { Axis::X => child_cols, Axis::Y => child_rows };
+    match a {
+        FixedAlignment::Start => 0,
+        FixedAlignment::Center => (available - child).max(0) / 2,
+        FixedAlignment::End => (available - child).max(0),
+        _ => 0,
+    }
+}
 
 // ── Horizontal composition ────────────────────────────────────────────────────
 

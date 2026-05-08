@@ -27,6 +27,7 @@ struct CellInfo {
     y: usize,
     w: usize,
     h: usize,
+    body: Content,   // original cell body for re-layout
     frame: TermFrame,
 }
 
@@ -49,7 +50,7 @@ fn layout_grid_impl(
     let mut auto_x: usize = 0;
     let mut auto_y: usize = 0;
 
-    for (body, x_smart, y_smart, colspan, rowspan) in cells {
+    for (body, x_smart, y_smart, colspan, _rowspan) in cells {
         let (x, y) = match (x_smart, y_smart) {
             (Smart::Custom(x), Smart::Custom(y)) => (x, y),
             (Smart::Custom(x), _) => {
@@ -80,6 +81,7 @@ fn layout_grid_impl(
             x, y,
             w: colspan.max(1),
             h: frame.rows().max(1) as usize,
+            body: body.clone(),
             frame,
         });
     }
@@ -107,10 +109,10 @@ fn layout_grid_impl(
             let used: Col = auto_sizes[cell.x..cell.x + cell.w].iter().sum();
             let need = cell.frame.cols() as Col;
             if need > used {
-                // Find the last auto or fr column
+                // Find the last non-Rel column to add extra width.
                 for k in (cell.x..cell.x + cell.w).rev() {
                     let s = columns.0.get(k);
-                    if s.is_some_and(|s| *s != Sizing::Rel(Sizing::default_rel())) {
+                    if s.is_some_and(|s| !matches!(s, Sizing::Rel(_))) {
                         auto_sizes[k] += need - used;
                         break;
                     }
@@ -122,18 +124,17 @@ fn layout_grid_impl(
     // ── Step 4: resolve column tracks ────────────────────────────────────
     let col_widths = units::resolve_tracks(columns, avail_width, &auto_sizes, styles);
 
-    // ── Step 5: re-layout cells with resolved widths (for wrapping) ──────
+    // ── Step 5: re-layout cells with resolved widths ─────────────────────
     for cell in &mut placed {
         let cell_w = spanned_total(&col_widths, cell.x, cell.w);
-        let meas_config = TermConfig {
-            width: Some((cell_w as u32).min(avail_width as u32)),
+        let re_config = TermConfig {
+            width: Some(cell_w as i32),
             ..*config
         };
-        let frame = layout_paragraph(engine, &Content::default(), &meas_config, styles, ContentStyle::default())?;
-        // We can't re-access the original body here easily.
-        // For now, use the measured frame as-is.
-        // TODO: store body content for re-layout.
-        let _ = frame;
+        let frame = layout_paragraph(engine, &cell.body, &re_config, styles, ContentStyle::default())?;
+        let rows = frame.rows().max(1);
+        cell.frame = frame;
+        cell.h = rows as usize;
     }
 
     // ── Step 6: compute row heights ──────────────────────────────────────
@@ -295,13 +296,6 @@ fn spanned_total(col_widths: &[Col], x: usize, w: usize) -> Col {
 
 fn rep(ch: char, n: Col) -> String {
     std::iter::repeat(ch).take(n as usize).collect()
-}
-
-// ── Sizing helpers ───────────────────────────────────────────────────────────
-
-/// Check if a Sizing is effectively Rel (not auto, not fr).
-fn is_rel(s: &Sizing) -> bool {
-    matches!(s, Sizing::Rel(_))
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────

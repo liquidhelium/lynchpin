@@ -48,7 +48,6 @@ use typst::text::{LinebreakElem, RawContent, RawElem, RawLine, SpaceElem, TextEl
 use lynchpin_library::TermBlockElem;
 
 use crate::config::TermConfig;
-use crate::eval_spacing;
 use crate::frame::{Row, TermFrame, TermSize};
 use crate::inline::layout_paragraph;
 use crate::lists::{render_enum_item, render_list_item, render_term_item};
@@ -63,6 +62,23 @@ use crate::stack::compose_vertical;
 #[derive(Debug, Clone)]
 pub struct TermPage {
     pub frame: TermFrame,
+}
+
+/// Layout a single content node as a block, returning one frame.
+/// Used by stack/place callbacks that need recursive block layout.
+pub fn layout_block(
+    engine: &mut Engine,
+    content: &Content,
+    config: &TermConfig,
+    styles: StyleChain,
+) -> SourceResult<TermFrame> {
+    let mut state = FlowState::new(config);
+    handle_block(&mut state, engine, content, styles)?;
+    if state.blocks.is_empty() {
+        Ok(TermFrame::new(TermSize::ZERO))
+    } else {
+        Ok(compose_vertical(state.blocks, 1, 0))
+    }
 }
 
 // ── Internal flow state ───────────────────────────────────────────────────────
@@ -301,7 +317,7 @@ fn handle_block(
         // Horizontal spacing at block level: skip.
     } else if let Some(v) = child.to_packed::<VElem>() {
         // Vertical spacing: insert a blank row.
-        state.push_blank(eval_spacing(styles, &v.amount) as i32);
+        state.push_blank(lynchpin_library::units::spacing_to_rows(&v.amount, styles) as i32);
 
     // ── Page break ───────────────────────────────────────────────────────────
     } else if child.is::<PagebreakElem>() {

@@ -46,11 +46,13 @@ use typst::{
     text::TextElem,
 };
 
+#[deprecated(note = "use `lynchpin_library::units::abs_to_cols` instead")]
 pub fn to_length(length: &Rel<Length>, styles: StyleChain) -> usize {
     let font_size = styles.get(TextElem::size).0;
     (length.relative_to(font_size).resolve(styles) / font_size.resolve(styles)).round() as usize
 }
 
+#[deprecated(note = "use `lynchpin_library::units::spacing_to_rows` instead")]
 pub fn eval_spacing(styles: StyleChain<'_>, s: &Spacing) -> usize {
     let rows = match s {
         Spacing::Rel(r) => to_length(r, styles),

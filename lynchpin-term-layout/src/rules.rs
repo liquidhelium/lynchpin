@@ -16,7 +16,6 @@ use comemo::Track;
 use lynchpin_library::{TermBlockCallback, TermBlockElem, frame::TermFrame};
 
 use crate::grid::{layout_grid, layout_table};
-use crate::stack::compose_vertical;
 
 /// Register terminal show rules into `rules`.
 pub fn register(rules: &mut NativeRuleMap) {
@@ -35,39 +34,7 @@ pub fn register(rules: &mut NativeRuleMap) {
 const STACK_RULE: ShowFn<StackElem> = |elem, _, _| {
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
-        |elem, engine, config, styles| {
-            let dir = elem.dir.get(styles);
-            let mut frames: Vec<TermFrame> = Vec::new();
-            for c in &elem.children {
-                use typst::layout::StackChild;
-                match c {
-                    StackChild::Block(content) => {
-                        // Layout child content as a paragraph.
-                        let frame = crate::inline::layout_paragraph(
-                            engine, content, config, styles,
-                            crossterm::style::ContentStyle::default(),
-                        )?;
-                        if !frame.size().is_empty() {
-                            frames.push(frame);
-                        }
-                    }
-                    StackChild::Spacing(_) => {
-                        if !frames.is_empty() {
-                            frames.push(TermFrame::new(lynchpin_library::frame::TermSize::new(0, 1)));
-                        }
-                    }
-                }
-            }
-            if frames.is_empty() {
-                return Ok(TermFrame::new(lynchpin_library::frame::TermSize::ZERO));
-            }
-            let horiz = dir.axis() == typst::layout::Axis::X;
-            if horiz {
-                Ok(crate::stack::compose_horizontal(frames, 1))
-            } else {
-                Ok(compose_vertical(frames, 1, 0))
-            }
-        },
+        |elem, engine, config, styles| crate::stack::layout_stack(elem, engine, config, styles),
     ))
     .pack()
     .spanned(elem.span()))
