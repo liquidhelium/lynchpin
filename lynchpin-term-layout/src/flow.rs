@@ -36,15 +36,16 @@ use typst::__warning;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
-use typst::layout::{BlockBody, BlockElem, BoxElem, HElem, HideElem, PagebreakElem, VElem};
+use typst::layout::{BlockBody, BlockElem, BoxElem, GridElem, HElem, HideElem, PagebreakElem, VElem};
 use typst::math::EquationElem;
-use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TermsElem};
+use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TableElem, TermsElem};
 use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawContent, RawElem, RawLine, SpaceElem, TextElem};
 
 use crate::config::TermConfig;
 use crate::frame::{Row, TermFrame, TermSize};
 use crate::inline::layout_paragraph;
+use crate::grid::{layout_grid, layout_table};
 use crate::lists::{render_enum_item, render_list_item, render_term_item};
 use crate::stack::compose_vertical;
 
@@ -310,6 +311,15 @@ fn handle_block(
         let frame = layout_paragraph(
             engine, child, state.config, styles, ContentStyle::default(),
         )?;
+        state.push(frame);
+
+    // ── Grid / Table (stub) ──────────────────────────────────────────────────
+    } else if let Some(elem) = child.to_packed::<GridElem>() {
+        let frame = layout_grid(elem, engine, state.config, styles)?;
+        state.push(frame);
+
+    } else if let Some(elem) = child.to_packed::<TableElem>() {
+        let frame = layout_table(elem, engine, state.config, styles)?;
         state.push(frame);
 
     // ── Unknown ───────────────────────────────────────────────────────────────
