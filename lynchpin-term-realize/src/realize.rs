@@ -21,6 +21,8 @@ use typst::foundations::{
     Content, Context, NativeElement, Packed, Recipe, RecipeIndex,
     SequenceElem, ShowSet, StyleChain, StyledElem, Styles, Synthesize, Transformation,
 };
+use typst::foundations::{ContextElem, TargetElem};
+use typst::layout::HideElem;
 use typst::introspection::TagElem;
 use typst::layout::{AlignElem, BoxElem, HElem, InlineElem, VElem};
 use typst::math::{EquationElem, Mathy};
@@ -69,6 +71,7 @@ pub fn realize_term<'a>(
         sink: vec![],
         groupings: ArrayVec::new(),
         may_attach: false,
+        loc_counter: 1,
     };
 
     visit(&mut s, content, styles)?;
@@ -97,6 +100,7 @@ struct State<'a, 'x, 'y> {
     groupings: ArrayVec<Grouping<'x>, MAX_GROUP_NESTING>,
     /// Whether "attach" spacing following the last element can survive.
     may_attach: bool,
+    loc_counter: u64,
     // (no saw_parbreak: it was set but never read — removed)
 }
 
@@ -261,7 +265,7 @@ fn visit_show_rules<'a>(
     let mut output = Cow::Borrowed(content);
 
     if !prepared {
-        prepare(s.engine, output.to_mut(), &mut map, styles)?;
+        prepare(s.engine, output.to_mut(), &mut map, styles, &mut s.loc_counter)?;
     }
 
     if let Some(ShowStep::Recipe(recipe, guard)) = step {
@@ -377,12 +381,18 @@ fn prepare(
     elem: &mut Content,
     map: &mut Styles,
     styles: StyleChain,
+    loc_counter: &mut u64,
 ) -> SourceResult<()> {
     if let Some(show_settable) = elem.with::<dyn ShowSet>() {
         map.apply(show_settable.show_set(styles));
     }
     if let Some(synthesizable) = elem.with_mut::<dyn Synthesize>() {
         synthesizable.synthesize(engine, styles.chain(map))?;
+    }
+    if elem.can::<dyn typst::introspection::Locatable>() {
+        *loc_counter += 1;
+        let loc = typst::introspection::Location::new(*loc_counter as u128);
+        elem.set_location(loc);
     }
     elem.materialize(styles.chain(map));
     elem.mark_prepared();
@@ -470,6 +480,17 @@ fn visit_grouping_rules<'a>(
         return Ok(true);
     }
 
+    // Cherry-picked built-in: ContextElem
+    if content.is::<ContextElem>() {
+        let target = styles.get(TargetElem::target);
+        if let Some(rule) = s.engine.routines.rules.get(target, content) {
+            let result = rule.apply(content, s.engine, styles)?;
+            visit(s, s.store(result), styles)?;
+            return Ok(true);
+        }
+    }
+    // Cherry-picked built-in: HideElem
+    if content.is::<HideElem>() { return Ok(true); }
     Ok(false)
 }
 
@@ -498,6 +519,17 @@ fn visit_filter_rules<'a>(
     }
 
     s.may_attach = content.is::<ParElem>();
+    // Cherry-picked built-in: ContextElem
+    if content.is::<ContextElem>() {
+        let target = styles.get(TargetElem::target);
+        if let Some(rule) = s.engine.routines.rules.get(target, content) {
+            let result = rule.apply(content, s.engine, styles)?;
+            visit(s, s.store(result), styles)?;
+            return Ok(true);
+        }
+    }
+    // Cherry-picked built-in: HideElem
+    if content.is::<HideElem>() { return Ok(true); }
     Ok(false)
 }
 
@@ -537,6 +569,17 @@ fn visit_term_rules<'a>(
         return Ok(true);
     }
 
+    // Cherry-picked built-in: ContextElem
+    if content.is::<ContextElem>() {
+        let target = styles.get(TargetElem::target);
+        if let Some(rule) = s.engine.routines.rules.get(target, content) {
+            let result = rule.apply(content, s.engine, styles)?;
+            visit(s, s.store(result), styles)?;
+            return Ok(true);
+        }
+    }
+    // Cherry-picked built-in: HideElem
+    if content.is::<HideElem>() { return Ok(true); }
     Ok(false)
 }
 

@@ -26,7 +26,7 @@ use crossterm::style::ContentStyle;
 use ecow::EcoString;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::{Content, ContextElem, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem};
+use typst::foundations::{Content, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem};
 use typst::layout::HideElem;
 use typst::layout::{BoxElem, HElem};
 use typst::math::{
@@ -397,9 +397,7 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
 
         // Cherry-picked: HideElem -> skip; ContextElem -> evaluate via show rule
         if content.is::<HideElem>() { return Ok(()); }
-        if content.is::<ContextElem>() {
-            return Ok(()); // skip — requires full realization for location assignment
-        }
+
 
         // ── Unknown: try to recurse, then emit placeholder ──────────────────
         if let Some(seq) = content.to_packed::<SequenceElem>() {
