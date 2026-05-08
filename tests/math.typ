@@ -46,3 +46,12 @@ $ underbracket(0 + 1 + dots.c + n, n + 1 "numbers") $
 $ overbracket(0 + 1 + dots.c + n, n + 1 "numbers") $
 $ underparen(0 + 1 + dots.c + n, n + 1 "numbers") $
 $ undershell(0 + 1 + dots.c + n, n + 1 "numbers") $
+Total displaced soil by glacial flow:
+
+Total displaced soil by glacial flow:
+
+$ 7.32 beta +
+  sum_(i=0)^nabla
+    (Q_i (a_i - epsilon)) / 2 $
+
+$ a >> b $

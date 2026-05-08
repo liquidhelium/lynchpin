@@ -43,18 +43,18 @@ pub fn layout_lr(
 
     // Measure the tallest inner fragment (excluding first / last if they are
     // delimiters – we stretch those to match).
-    let inner_height = inner_content_rows(&frags);
+    let (inner_height, inner_baseline) = inner_content_metrics(&frags);
 
     // Stretch the opening delimiter (first fragment if it looks like one).
     if let Some(first) = frags.first_mut() {
-        try_stretch_delimiter(first, inner_height, ctx, true);
+        try_stretch_delimiter(first, inner_height, inner_baseline, ctx, true);
     }
 
     // Stretch the closing delimiter (last fragment if it looks like one).
     let last_idx = frags.len() - 1;
     if last_idx > 0 {
         if let Some(last) = frags.last_mut() {
-            try_stretch_delimiter(last, inner_height, ctx, false);
+            try_stretch_delimiter(last, inner_height, inner_baseline, ctx, false);
         }
     }
 
@@ -78,16 +78,12 @@ fn is_delimiter_class(class: MathClass) -> bool {
 ///
 /// We look at all fragments except the first and last (which are typically the
 /// opening/closing delimiters).  If the group has ≤ 2 fragments we return 1.
-fn inner_content_rows(frags: &[TermMathFragment]) -> Row {
-    if frags.len() <= 2 {
-        return 1;
-    }
-    frags[1..frags.len() - 1]
-        .iter()
-        .map(|f| f.rows())
-        .max()
-        .unwrap_or(1)
-        .max(1)
+fn inner_content_metrics(frags: &[TermMathFragment]) -> (Row, Row) {
+    if frags.len() <= 2 { return (1, 0); }
+    let inner = &frags[1..frags.len() - 1];
+    let a = inner.iter().map(|f| f.ascent()).max().unwrap_or(0);
+    let d = inner.iter().map(|f| f.descent()).max().unwrap_or(1);
+    ((a + d).max(1), a.max(0))
 }
 
 /// If `frag` is a single-character delimiter, replace it in-place with a
@@ -96,32 +92,19 @@ fn inner_content_rows(frags: &[TermMathFragment]) -> Row {
 fn try_stretch_delimiter(
     frag: &mut TermMathFragment,
     height: Row,
+    baseline_hint: Row,
     ctx: &TermMathContext,
     _is_opening: bool,
 ) {
-    // Only stretch Frame fragments.
     let class = frag.class();
-    if !is_delimiter_class(class) {
-        return;
-    }
-
-    // Extract the single character from the frame.
-    let ch = match extract_single_char(frag) {
-        Some(c) => c,
-        None => return,
-    };
-
+    if !is_delimiter_class(class) { return; }
+    let ch = match extract_single_char(frag) { Some(c) => c, None => return };
     let chars = stretch_chars_for(ch, height, ctx);
-    if chars.is_empty() {
-        return;
-    }
+    if chars.is_empty() { return; }
 
     let new_frame = build_delimiter_frame(chars, ContentStyle::default());
-    let new_rows = new_frame.rows();
-    let baseline = new_rows / 2; // vertically centred baseline
     let mut frame_frag = TermMathFrameFragment::new(new_frame).with_class(class);
-    frame_frag.frame.set_baseline(baseline);
-
+    frame_frag.frame.set_baseline(baseline_hint);
     *frag = TermMathFragment::Frame(frame_frag);
 }
 
@@ -255,9 +238,9 @@ pub fn hstretch_char(ch: char, width: Col, mode: RenderMode) -> String {
         '\u{2194}' => arrow_lr(w, '←', '─', '⟶', '<', '-', '>', mode),
         // '\u{21D4}' => arrow_lr(w, '⇐', '═', '⇒','<' ,'=', '>', mode),
         '\u{21D4}' => arrow_lr(w, '<', '=', '>','<' ,'=', '>', mode),
-        // ── Horizontal braces ───────────────────────────────────────────────
-        '\u{23DF}' => rep(mode.underbrace_char(), w),
-        '\u{23DE}' => rep(mode.overbrace_char(), w),
+        // // ── Horizontal braces ───────────────────────────────────────────────
+        // '\u{23DF}' => rep(mode.underbrace_char(), w),
+        // '\u{23DE}' => rep(mode.overbrace_char(), w),
         // ── Horizontal lines ────────────────────────────────────────────────
         '\u{2500}' | '\u{2015}' => rep(mode.hbar(), w),
         // ── Fallback ────────────────────────────────────────────────────────

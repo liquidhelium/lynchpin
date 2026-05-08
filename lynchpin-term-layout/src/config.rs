@@ -230,39 +230,7 @@ impl RenderMode {
 
     // ── Underbrace / overbrace ────────────────────────────────────────────────
 
-    /// Character for underbrace bottom (repeated to span content width).
-    /// Single char; stretching is done by repetition.
-    pub fn underbrace_char(self) -> char {
-        if self.is_unicode() { '⏟' } else { 'v' }
-    }
-
-    pub fn overbrace_char(self) -> char {
-        if self.is_unicode() { '⏞' } else { '^' }
-    }
-
-    pub fn underbracket_char(self) -> char {
-        if self.is_unicode() { '⎵' } else { '_' }
-    }
-
-    pub fn overbracket_char(self) -> char {
-        if self.is_unicode() { '⎴' } else { '-' }
-    }
-
-    pub fn underparen_char(self) -> char {
-        if self.is_unicode() { '⏝' } else { 'u' }
-    }
-
-    pub fn overparen_char(self) -> char {
-        if self.is_unicode() { '⏜' } else { 'n' }
-    }
-
-    pub fn undershell_char(self) -> char {
-        if self.is_unicode() { '⏡' } else { 'u' }
-    }
-
-    pub fn overshell_char(self) -> char {
-        if self.is_unicode() { '⏠' } else { 'n' }
-    }
+    /// Character for underbrace bottom
 
     // ── Accent attach characters ──────────────────────────────────────────────
 
