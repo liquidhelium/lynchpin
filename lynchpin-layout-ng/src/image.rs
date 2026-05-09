@@ -20,7 +20,7 @@ pub fn layout_image(
     elem: &Packed<ImageElem>,
     engine: &mut Engine,
     config: &TermConfig,
-    _styles: StyleChain,
+    styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = engine;
 
@@ -29,7 +29,7 @@ pub fn layout_image(
     let label = format!("[img: {}]", alt_text);
 
     // Determine the placeholder size from configuration.
-    let width_cols: Col = config.effective_width().min(TermScalar::new(20));
+    let width_cols: Col = lynchpin_library_ng::resolve_page_size(styles).cols.min(TermScalar::new(20));
     let height_rows: Row = (width_cols / TermScalar::new(2)).max(TermScalar::ONE);
 
     let size = TermSize::new(width_cols.max(TermScalar::ONE), height_rows.max(TermScalar::ONE));

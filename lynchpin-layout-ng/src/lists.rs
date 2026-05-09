@@ -46,7 +46,7 @@ pub fn layout_list(
             styles,
             TermRegion::new(
                 TermSize::new(
-                    config.effective_width() - indent,
+                    lynchpin_library_ng::resolve_page_size(styles).cols - indent,
                     TermScalar::INFINITY,
                 ),
                 Axes::new(false, false),
@@ -115,7 +115,7 @@ pub fn layout_enum(
             styles,
             TermRegion::new(
                 TermSize::new(
-                    config.effective_width() - indent,
+                    lynchpin_library_ng::resolve_page_size(styles).cols - indent,
                     TermScalar::INFINITY,
                 ),
                 Axes::new(false, false),
@@ -172,7 +172,7 @@ pub fn layout_terms(
             typst_library::introspection::Locator::root(),
             styles,
             TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 Axes::new(false, false),
             ),
         )?;
@@ -195,7 +195,7 @@ pub fn layout_terms(
             styles,
             TermRegion::new(
                 TermSize::new(
-                    config.effective_width() - term_cols - TermScalar::new(2),
+                    lynchpin_library_ng::resolve_page_size(styles).cols - term_cols - TermScalar::new(2),
                     TermScalar::INFINITY,
                 ),
                 Axes::new(false, false),

@@ -3,10 +3,16 @@
 //! [`RenderMode`] selects between Unicode and ASCII rendering of math
 //! constructs and shapes.
 //!
-//! [`TermConfig`] bundles all render-time options — the terminal equivalent
-//! of page setup in paged layout.
+//! [`TermConfig`] bundles render-time options — the terminal equivalent
+//! of page setup in paged layout.  Unlike paged, page **dimensions** are
+//! NOT stored here; they are resolved from `PageElem::width`/`PageElem::height`
+//! in the style chain (see `resolve_page_size` in `lynchpin-layout-ng`).
 
-use crate::frame::Col;
+use typst::foundations::{Resolve, StyleChain};
+use typst::layout::PageElem;
+use typst::text::TextElem;
+
+use crate::frame::{Col, Row, TermSize};
 use crate::scalar::TermScalar;
 
 // ── RenderMode ────────────────────────────────────────────────────────────────
@@ -32,8 +38,6 @@ impl RenderMode {
         self == RenderMode::Ascii
     }
 
-    // ── Rule characters ───────────────────────────────────────────────────
-
     pub fn hbar(self) -> char {
         if self.is_unicode() { '─' } else { '-' }
     }
@@ -42,8 +46,6 @@ impl RenderMode {
         if self.is_unicode() { '│' } else { '|' }
     }
 
-    // ── Square-root ───────────────────────────────────────────────────────
-
     pub fn sqrt_sym(self) -> char {
         if self.is_unicode() { '√' } else { 'V' }
     }
@@ -51,8 +53,6 @@ impl RenderMode {
     pub fn sqrt_overline(self) -> char {
         if self.is_unicode() { '─' } else { '_' }
     }
-
-    // ── Delimiters ────────────────────────────────────────────────────────
 
     pub fn left_paren(self) -> char { '(' }
     pub fn right_paren(self) -> char { ')' }
@@ -64,19 +64,18 @@ impl RenderMode {
 
 // ── TermConfig ────────────────────────────────────────────────────────────────
 
-/// Top-level configuration for terminal layout and rendering.
+/// Terminal rendering configuration — the terminal equivalent of
+/// `PageElem` settings in paged layout.
 ///
-/// The terminal equivalent of `PageElem` settings in paged layout.
+/// Page **dimensions** are NOT stored here.  They are resolved from
+/// `PageElem::width` / `PageElem::height` in the style chain via
+/// [`resolve_page_size`].
 #[derive(Debug, Clone)]
 pub struct TermConfig {
     /// ASCII or Unicode rendering mode.
     pub mode: RenderMode,
-    /// Maximum output width in columns.  `None` = unbounded.
-    pub width: Option<Col>,
     /// Indent step used for nested blocks (list items, block quotes, etc.).
     pub indent: Col,
-    /// Page height in rows.  `None` = unbounded (content grows freely).
-    pub height: Option<Col>,
     /// Gap between blocks in rows.
     pub block_gap: Col,
     /// Gap between paragraphs in rows.
@@ -87,23 +86,42 @@ impl Default for TermConfig {
     fn default() -> Self {
         Self {
             mode: RenderMode::Unicode,
-            width: Some(TermScalar::new(80)),
             indent: TermScalar::new(2),
-            height: None,
             block_gap: TermScalar::new(1),
             par_gap: TermScalar::new(1),
         }
     }
 }
 
-impl TermConfig {
-    /// Return the effective width, falling back to a generous default.
-    pub fn effective_width(&self) -> Col {
-        self.width.unwrap_or(TermScalar::new(80))
-    }
+// ── Page size resolution ─────────────────────────────────────────────────────
 
-    /// Return the effective height, or infinity if unbounded.
-    pub fn effective_height(&self) -> Col {
-        self.height.unwrap_or(TermScalar::INFINITY)
-    }
+/// Resolve the terminal page size from the style chain, just as paged
+/// reads `PageElem::width` / `PageElem::height`.
+///
+/// Returns `(width_in_cols, height_in_rows)`.
+pub fn resolve_page_size(styles: StyleChain) -> TermSize {
+    use typst::layout::Abs;
+
+    // Read page dimensions from styles (same as paged `pages/run.rs:102-103`).
+    let page_width = styles.resolve(PageElem::width).unwrap_or(Abs::inf());
+    let page_height = styles.resolve(PageElem::height).unwrap_or(Abs::inf());
+
+    // Convert to terminal columns/rows using the font size.
+    let font_size = styles.get(TextElem::size).0.resolve(styles);
+
+    let cols = if page_width != Abs::inf() {
+        TermScalar::from_f64((page_width / font_size).round().max(1.0))
+    } else {
+        // When page width is auto, default to 80 columns.
+        TermScalar::new(80)
+    };
+
+    let rows = if page_height != Abs::inf() {
+        TermScalar::from_f64((page_height / font_size).round().max(1.0))
+    } else {
+        // When page height is auto, use unbounded.
+        TermScalar::INFINITY
+    };
+
+    TermSize::new(cols, rows)
 }

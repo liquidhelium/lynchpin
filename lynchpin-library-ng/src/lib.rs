@@ -20,7 +20,7 @@ pub mod scalar;
 pub mod units;
 
 // Re-export the most-used types.
-pub use config::{RenderMode, TermConfig};
+pub use config::{RenderMode, TermConfig, resolve_page_size};
 pub use frame::{
     Alignment, Axes, Col, Row, TermCell, TermFrame, TermFrameItem, TermGeometry, TermGrid,
     TermImage, TermPoint, TermShape, TermSize, char_cols, text_cols,

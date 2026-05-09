@@ -138,7 +138,7 @@ fn layout_with_style(
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
-            TermSize::new(config.effective_width(), TermScalar::INFINITY),
+            TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
             Axes::new(false, false),
         ),
     )

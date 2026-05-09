@@ -25,7 +25,7 @@ pub fn layout_repeat(
 ) -> SourceResult<TermFrame> {
     // Layout a single piece with no expansion.
     let pod_region = TermRegion::new(
-        TermSize::new(config.effective_width(), TermScalar::INFINITY),
+        TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
         Axes::new(false, false),
     );
     let piece = crate::flow::layout_term_frame(
@@ -37,7 +37,7 @@ pub fn layout_repeat(
     )?;
 
     let width: Col = piece.size().cols;
-    let fill: Col = config.effective_width();
+    let fill: Col = lynchpin_library_ng::resolve_page_size(styles).cols;
 
     if !width.is_finite() || !fill.is_finite() {
         bail!(elem.span(), "repeat with no size restrictions");

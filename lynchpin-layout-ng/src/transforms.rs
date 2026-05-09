@@ -36,7 +36,7 @@ pub fn layout_move(
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
-            TermSize::new(config.effective_width(), TermScalar::INFINITY),
+            TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
             Axes::new(false, false),
         ),
     )?;
@@ -75,7 +75,7 @@ pub fn layout_rotate(
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
-            TermSize::new(config.effective_width(), TermScalar::INFINITY),
+            TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
             Axes::new(false, false),
         ),
     )
@@ -98,7 +98,7 @@ pub fn layout_scale(
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
-            TermSize::new(config.effective_width(), TermScalar::INFINITY),
+            TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
             Axes::new(false, false),
         ),
     )
@@ -121,7 +121,7 @@ pub fn layout_skew(
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
-            TermSize::new(config.effective_width(), TermScalar::INFINITY),
+            TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
             Axes::new(false, false),
         ),
     )

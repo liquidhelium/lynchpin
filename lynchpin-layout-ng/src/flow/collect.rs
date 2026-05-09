@@ -110,12 +110,18 @@ impl<'a> Collector<'a, '_, '_> {
 
     fn par(
         &mut self,
-        _elem: &'a Packed<ParElem>,
-        _styles: StyleChain<'a>,
+        elem: &'a Packed<ParElem>,
+        styles: StyleChain<'a>,
     ) -> SourceResult<()> {
-        // Paragraph layout is handled by the inline module (Agent C).
-        // Here we produce a placeholder frame with a reasonable height.
-        let frame = TermFrame::new(TermSize::new(self.base.cols, TermScalar::new(1)));
+        use crossterm::style::ContentStyle;
+        let frame = crate::inline::layout_par(
+            elem,
+            self.engine,
+            &TermConfig::default(),
+            styles,
+            ContentStyle::default(),
+            Some(crate::inline::ParSituation::Consecutive),
+        )?;
         let need = frame.rows();
         let align = Axes::new(
             FixedAlignment::Start.into(),
@@ -186,11 +192,28 @@ impl<'a> Collector<'a, '_, '_> {
 
     fn heading(
         &mut self,
-        _elem: &'a Packed<HeadingElem>,
-        _styles: StyleChain<'a>,
+        elem: &'a Packed<HeadingElem>,
+        styles: StyleChain<'a>,
     ) -> SourceResult<()> {
-        // Heading layout is handled by the inline module (Agent C).
-        let frame = TermFrame::new(TermSize::new(self.base.cols, TermScalar::new(1)));
+        use crossterm::style::{Attribute, Color, ContentStyle};
+        let level = elem.resolve_level(styles).get() as usize;
+        let mut style = ContentStyle::default();
+        style.attributes.set(Attribute::Bold);
+        style.foreground_color = Some(match level {
+            1 => Color::Yellow,
+            2 => Color::Cyan,
+            3 => Color::Green,
+            _ => Color::Blue,
+        });
+        let frame = crate::inline::layout_paragraph(
+            self.engine,
+            &elem.body,
+            &TermConfig::default(),
+            styles,
+            style,
+            Some(crate::inline::ParSituation::First),
+            self.base.cols,
+        )?;
         let need = frame.rows();
         let align = Axes::new(
             FixedAlignment::Start.into(),
@@ -450,7 +473,7 @@ impl PlacedChild<'_> {
         // In terminal, placed elements are laid out via the block callback.
         use super::super::flow::block::layout_single_block;
         let region = lynchpin_library_ng::TermRegion::new(
-            TermSize::new(config.effective_width(), config.effective_height()),
+            TermSize::new(lynchpin_library_ng::resolve_page_size(self.styles).cols, lynchpin_library_ng::resolve_page_size(self.styles).rows),
             Axes::splat(true),
         );
         layout_single_block(engine, &[], self.styles, region)

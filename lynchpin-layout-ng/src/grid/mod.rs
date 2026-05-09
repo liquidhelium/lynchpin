@@ -84,18 +84,8 @@ pub fn layout_cell(
 
     let locator = locator.next(&cell.body.span());
 
-    // Realize the cell content and lay out with terminal flow.
-    use typst::routines::{Arenas, RealizationKind};
-    let arenas = Arenas::default();
-    let pairs = (engine.routines.realize)(
-        RealizationKind::LayoutFragment { kind: &mut typst::routines::FragmentKind::Block },
-        engine,
-        &mut locator,
-        &arenas,
-        &cell.body,
-        styles,
-    )?;
-    let fragment = crate::flow::layout_term_fragment(engine, &pairs, &mut locator, styles, regions)?;
+    let fragment = crate::flow::layout_term_fragment_from_content(engine, &cell.body, locator, styles, regions)?;
+
 
     // Manually insert tags.
     let mut frames: Vec<TermFrame> = fragment_into_frames(fragment);

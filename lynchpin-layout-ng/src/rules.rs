@@ -126,7 +126,7 @@ const HEADING_RULE: ShowFn<HeadingElem> = |elem, _, _styles| {
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
         move |_elem, engine, config, styles| {
-            let region_size = TermSize::new(config.effective_width(), TermScalar::INFINITY);
+            let region_size = TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY);
             let region = TermRegion::new(
                 region_size,
                 typst::layout::Axes::new(false, false),
@@ -149,7 +149,7 @@ const FIGURE_RULE: ShowFn<FigureElem> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             // Figures: layout the body (with optional caption).
-            let region_size = TermSize::new(config.effective_width(), TermScalar::INFINITY);
+            let region_size = TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY);
             let region = TermRegion::new(
                 region_size,
                 typst::layout::Axes::new(false, false),
@@ -173,7 +173,7 @@ const FIGURE_CAPTION_RULE: ShowFn<FigureCaption> = |elem, engine, styles| {
         elem.clone(),
         move |_elem, eng, config, st| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -194,7 +194,7 @@ const QUOTE_RULE: ShowFn<QuoteElem> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -230,7 +230,7 @@ const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
         elem.clone(),
         move |_elem, eng, config, st| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             let prefix_frame = crate::flow::layout_term_frame(
@@ -270,7 +270,7 @@ const REF_RULE: ShowFn<RefElem> = |elem, engine, styles| {
         elem.clone(),
         move |_elem, eng, config, st| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -292,7 +292,7 @@ const TABLE_RULE: ShowFn<TableElem> = |elem, _, _| {
         |elem, engine, config, styles| {
             let locator = typst::introspection::Locator::root();
             let regions = TermRegions::one(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             let fragment = crate::grid::layout_table(elem, engine, locator, styles, regions)?;
@@ -310,7 +310,7 @@ const TABLE_CELL_RULE: ShowFn<TableCell> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -394,7 +394,7 @@ const SMALLCAPS_RULE: ShowFn<SmallcapsElem> = |elem, _, _| {
 const RAW_RULE: ShowFn<RawElem> = |elem, _, _| {
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
-        |elem, _engine, config, _styles| {
+        |elem, _engine, config, styles| {
             use typst::text::RawContent;
             let text: ecow::EcoString = match &elem.text {
                 RawContent::Text(t) => t.clone(),
@@ -409,7 +409,7 @@ const RAW_RULE: ShowFn<RawElem> = |elem, _, _| {
             };
             let lines: Vec<&str> = text.lines().collect();
             let max_width: i32 = lines.iter().map(|l: &&str| l.len() as i32).max().unwrap_or(0);
-            let max_width = TermScalar::new(max_width).min(config.effective_width());
+            let max_width = TermScalar::new(max_width).min(lynchpin_library_ng::resolve_page_size(styles).cols);
             let height = TermScalar::new(lines.len() as i32).max(TermScalar::ONE);
 
             let mut frame = TermFrame::new(TermSize::new(max_width, height));
@@ -433,7 +433,7 @@ const RAW_LINE_RULE: ShowFn<RawLine> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -456,7 +456,7 @@ const ALIGN_RULE: ShowFn<AlignElem> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -477,7 +477,7 @@ const PAD_RULE: ShowFn<PadElem> = |elem, _, _styles| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             let mut fragment = crate::flow::layout_term_frame(
@@ -509,7 +509,7 @@ const COLUMNS_RULE: ShowFn<ColumnsElem> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -540,7 +540,7 @@ const GRID_RULE: ShowFn<GridElem> = |elem, _, _| {
         |elem, engine, config, styles| {
             let locator = typst::introspection::Locator::root();
             let regions = TermRegions::one(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             let fragment = crate::grid::layout_grid(elem, engine, locator, styles, regions)?;
@@ -557,7 +557,7 @@ const GRID_CELL_RULE: ShowFn<GridCell> = |elem, _, _| {
         elem.clone(),
         |elem, engine, config, styles| {
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -634,8 +634,8 @@ const LAYOUT_RULE: ShowFn<LayoutElem> = |elem, _, _| {
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, config, styles| {
-            let width_i64: i64 = config.width.unwrap_or(TermScalar::new(80)).get() as i64;
-            let height_i64: i64 = config.effective_height().get() as i64;
+            let width_i64: i64 = lynchpin_library_ng::resolve_page_size(styles).cols.get() as i64;
+            let height_i64: i64 = lynchpin_library_ng::resolve_page_size(styles).rows.get() as i64;
             let loc = elem.location();
             let context = typst::foundations::Context::new(loc, Some(styles));
             let result = elem
@@ -650,7 +650,7 @@ const LAYOUT_RULE: ShowFn<LayoutElem> = |elem, _, _| {
                 )?
                 .display();
             let region = TermRegion::new(
-                TermSize::new(config.effective_width(), TermScalar::INFINITY),
+                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(

@@ -20,11 +20,11 @@ use rustc_hash::FxHashSet;
 
 use typst::diag::{SourceDiagnostic, SourceResult};
 use typst::engine::Engine;
-use typst::foundations::StyleChain;
+use typst::foundations::{Content, StyleChain};
 use typst::introspection::{Locator, SplitLocator, Tag};
 use typst::layout::Axes;
 use typst::model::FootnoteElem;
-use typst::routines::Pair;
+use typst::routines::{Pair, FragmentKind, RealizationKind, Arenas};
 
 use lynchpin_library_ng::{
     Col, TermFrame, TermFragment, TermRegion, TermRegions, TermScalar, TermSize,
@@ -37,6 +37,54 @@ use self::collect::collect;
 use self::compose::compose;
 
 // ── Entry points ─────────────────────────────────────────────────────────────
+
+/// Lays out a single [`Content`] node into a frame.  Realizes internally.
+///
+/// This is the terminal equivalent of paged `layout_frame(&Content, ...)`.
+pub fn layout_term_frame_from_content(
+    engine: &mut Engine,
+    content: &Content,
+    locator: Locator<'_>,
+    styles: StyleChain<'_>,
+    region: TermRegion,
+) -> SourceResult<TermFrame> {
+    let fragment = layout_term_fragment_from_content(engine, content, locator, styles, region.into())?;
+    Ok(fragment.into_iter().next().unwrap_or_else(|| TermFrame::new(TermSize::ZERO)))
+}
+
+/// Lays out [`Content`] into terminal regions.  Realizes internally.
+///
+/// This is the terminal equivalent of paged `layout_fragment(&Content, ...)`.
+pub fn layout_term_fragment_from_content(
+    engine: &mut Engine,
+    content: &Content,
+    locator: Locator<'_>,
+    styles: StyleChain<'_>,
+    regions: TermRegions,
+) -> SourceResult<TermFragment> {
+    use typst::routines::{Arenas, RealizationKind};
+    let mut kind = typst::routines::FragmentKind::Block;
+    let arenas = Arenas::default();
+    let mut split = locator.split();
+    let children = (engine.routines.realize)(
+        RealizationKind::LayoutFragment { kind: &mut kind },
+        engine,
+        &mut split,
+        &arenas,
+        content,
+        styles,
+    )?;
+    layout_flow(
+        engine,
+        &children,
+        &mut split,
+        styles,
+        regions,
+        NonZeroUsize::new(1).unwrap(),
+        TermScalar::ZERO,
+        FlowMode::from(kind),
+    )
+}
 
 /// Lays out content into a single region, producing a single frame.
 pub fn layout_term_frame(
@@ -83,6 +131,15 @@ pub enum FlowMode {
     Block,
     /// A flow whose children are inline-level elements.
     Inline,
+}
+
+impl From<FragmentKind> for FlowMode {
+    fn from(value: FragmentKind) -> Self {
+        match value {
+            FragmentKind::Inline => Self::Inline,
+            FragmentKind::Block => Self::Block,
+        }
+    }
 }
 
 // ── Core flow layout ─────────────────────────────────────────────────────────

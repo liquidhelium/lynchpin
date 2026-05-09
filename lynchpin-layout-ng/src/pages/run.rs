@@ -63,11 +63,8 @@ pub fn layout_page_run(
     locator: Locator<'_>,
     initial: StyleChain<'_>,
 ) -> SourceResult<Vec<LayoutedPage>> {
-    // Determine the page dimensions from the style chain or use defaults.
-    // In terminal layout, we use a generous width and auto-height.
-    let width: Col = TermScalar::new(80);
-    let height: Row = TermScalar::INFINITY;
-    let size = TermSize::new(width, height);
+    // Determine the page dimensions from the style chain — same as paged.
+    let size = lynchpin_library_ng::resolve_page_size(initial);
 
     // Layout the children using the flow pipeline.
     let fragment = layout_flow(

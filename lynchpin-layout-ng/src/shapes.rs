@@ -230,11 +230,11 @@ pub fn layout_curve(
     elem: &Packed<typst_library::visualize::CurveElem>,
     _engine: &mut Engine,
     config: &TermConfig,
-    _styles: StyleChain,
+    styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     // Curves are complex to render in terminal; return an empty frame.
     Ok(TermFrame::new(TermSize::new(
-        config.effective_width().min(TermScalar::new(10)),
+        lynchpin_library_ng::resolve_page_size(styles).cols.min(TermScalar::new(10)),
         TermScalar::ONE,
     )))
 }
@@ -245,11 +245,11 @@ pub fn layout_path(
     elem: &Packed<PathElem>,
     _engine: &mut Engine,
     config: &TermConfig,
-    _styles: StyleChain,
+    styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     // Paths are complex to render in terminal; return an empty frame.
     Ok(TermFrame::new(TermSize::new(
-        config.effective_width().min(TermScalar::new(10)),
+        lynchpin_library_ng::resolve_page_size(styles).cols.min(TermScalar::new(10)),
         TermScalar::ONE,
     )))
 }
@@ -296,7 +296,7 @@ fn layout_term_shape(
     };
 
     // Determine size.
-    let default_w: Col = config.effective_width().min(TermScalar::new(20));
+    let default_w: Col = lynchpin_library_ng::resolve_page_size(styles).cols.min(TermScalar::new(20));
     let default_h: Row = TermScalar::new(8);
     let cols = if w > TermScalar::ZERO { w } else { default_w };
     let rows = if h > TermScalar::ZERO { h } else { default_h };

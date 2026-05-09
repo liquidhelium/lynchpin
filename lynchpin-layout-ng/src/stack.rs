@@ -31,7 +31,7 @@ pub fn layout_stack(
     let spacing = elem.spacing.get(styles);
 
     // Create a single region using terminal width.
-    let size = TermSize::new(config.effective_width(), TermScalar::INFINITY);
+    let size = TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY);
     let expand = Axes::splat(false);
     let regions = TermRegions::one(size, expand);
 

@@ -445,3 +445,530 @@ These are places where one agent's code calls a function expected from another a
 **🟢 Low (cosmetic / future enhancement):**
 1. `inline/box.rs:118` — label assignment (Agent A dependency)
 2. `math/operators.rs` — new file, not a gap but worth noting as extra functionality
+
+### Agent B — Blocker report
+
+#### Gap 1: `layout_single_block` and `layout_multi_block` are stubs (`flow/block.rs`)
+
+**What's missing vs paged:**
+
+The paged versions (in `lynchpin-layout/src/flow/block.rs`) do substantial work:
+1. Fetch sizing properties (`width`, `height`, `inset`) from the `Packed<BlockElem>`
+2. Build pod regions via `unbreakable_pod` / `breakable_pod`
+3. Match on `BlockBody::Content` / `SingleLayouter` / `MultiLayouter` to layout the body
+4. Apply insets via `crate::pad::grow(&mut frame, &inset)`
+5. Enforce frame size on expanded axes via `frame.set_size(pod.expand.select(pod.size, frame.size()))`
+6. Clip contents via `frame.clip(clip_rect(...))`
+7. Apply fill and stroke via `fill_and_stroke(...)`
+8. Set `FrameKind::Hard` for explicit blocks
+9. Assign labels
+
+The terminal stubs do **none of this** — they ignore all inputs and return empty frames.
+
+**Root causes (three blockers):**
+
+a) **Architectural mismatch — no `Packed<BlockElem>` access.** The terminal functions receive `body: &[Pair<'_>]` (pre-realized children), not `elem: &Packed<BlockElem>`. All styling properties (fill, stroke, inset, clip, radius, outset) live on the element, not on the Pair slice. Without the element, these functions cannot know what inset to apply or what fill/stroke to draw. **Question for Agent A / architecture:** Should these functions accept the original element as well, or should styling be pre-resolved and passed via a separate struct?
+
+b) **Missing library APIs on `TermFrame`.** The paged `Frame` has methods that `TermFrame` lacks:
+   - `frame.clip(rect)` — clip to a rectangle
+   - `frame.set_kind(FrameKind::Hard)` — mark frame as a gradient boundary
+   - `frame.label(label)` — assign a label
+   - `frame.set_size(size)` — set size with axial select
+   - `frame.size()` — get current size
+   These are all needed to implement the block post-processing logic. **Dependency:** Agent A (`lynchpin-library-ng`) must add these methods to `TermFrame`.
+
+c) **Missing helper functions in other terminal modules** (also stubbed — see sections C1, C3, B1, B3 in the review above):
+   - `pad::grow()` / `pad::shrink()` — needed for inset application
+   - `clip_rect()` — needed to compute the clip rectangle
+   - `fill_and_stroke()` — needed for background/border drawing
+   These are all in `shapes.rs` and `pad.rs`, which are themselves stubbed. **Dependency:** These modules need to be completed first (or at least their public APIs stabilized) before block.rs can call them.
+
+**What I need to finish this:**
+1. Clarification on how styling properties reach `layout_single_block` / `layout_multi_block` (element reference vs pre-resolved struct)
+2. `TermFrame` gains `clip()`, `set_kind()`, `label()`, `set_size()` + size getter
+3. `pad::grow()`, `clip_rect()`, `fill_and_stroke()` implemented in the terminal equivalents
+
+---
+
+#### Gap 2: `layout_columns` is missing entirely (`flow/mod.rs`)
+
+**What's missing vs paged:**
+
+The paged version has a public `layout_columns()` function that:
+1. Takes `elem: &Packed<ColumnsElem>`, extracts `elem.count` and `elem.gutter`
+2. Delegates to `layout_fragment_impl(..., columns, column_gutter)` — the same memoized impl used by `layout_fragment`
+3. The `configuration()` function inside `layout_flow` computes a `ColumnConfig { count, width, gutter, dir }` from the column parameters
+
+The terminal `layout_flow` already accepts `columns: NonZeroUsize` and `column_gutter: TermScalar` in its signature (for API compatibility), but:
+- The comment says `let _ = (column_gutter, columns, mode); // kept for API compatibility` — they are explicitly **not used**
+- The terminal `Config` struct only has `width` and `expand` — no `ColumnConfig`, no `FootnoteConfig`, no `LineNumberConfig`
+- There is no `configuration()` equivalent that computes column widths from count + gutter
+- There is no public `layout_columns` function to wire up the `ColumnsElem` → flow pipeline entry point
+
+**Root causes (three blockers):**
+
+a) **No terminal `ColumnsElem` equivalent (or it exists but is not wired).** The paged version depends on `typst_library::layout::ColumnsElem` which has `.count`, `.gutter`, `.body`. The terminal library may or may not have an equivalent. **Question for Agent A:** Does `lynchpin-library-ng` have a `ColumnsElem` or similar container element? If not, what's the terminal story for multi-column layout?
+
+b) **Column layout logic is unimplemented in the compose/distribute pipeline.** The paged `configuration()` computes per-column width as `(regions.size.x - gutter * (count - 1)) / count`. The compose step then lays out into column-width sub-regions. Columns can also interact via parent-scoped placed elements and footnote/float insertion areas. None of this exists in the terminal pipeline — `compose` works on the full region width with no column splitting. This isn't a simple function to add; it requires changes to `collect`, `compose`, and `distribute`.
+
+c) **The terminal `Config` and `Work` types are stripped down.** They lack:
+   - `ColumnConfig` (count, width, gutter, dir)
+   - `FootnoteConfig` (separator, clearance, gap, expand)
+   - `LineNumberConfig` (scope, clearance)
+   - `FlowMode::Root` (the terminal has `Root` but the `configuration()` that uses it is missing)
+   The `configuration()` function that populates these from styles needs to be ported.
+
+**What I need to finish this:**
+1. Confirmation that a terminal `ColumnsElem` exists (or a decision that columns are deferred/postponed)
+2. If columns are in scope: Agent A adds `ColumnConfig`/`FootnoteConfig`/`LineNumberConfig` types to the library, or I add them in `flow/mod.rs`
+3. Port `configuration()` from paged → terminal, mapping `Abs`/`Rel`/`Em` types to `TermScalar` equivalents
+4. Modify `compose` to split regions into column-width sub-regions and iterate over columns
+5. If columns are **not** in scope for v1: I'll remove the `columns`/`column_gutter` parameters and add a `// TODO: columns` marker instead of the misleading API-compat stub
+
+---
+
+### Agent F — Blocker report
+
+#### Gap 1: `clip_rect`, `fill_and_stroke`, `styled_rect` missing from `shapes.rs`
+
+**What's missing vs expected API:**
+
+The terminal `shapes.rs` currently contains layout functions for individual shape
+primitives (`layout_line`, `layout_rect`, `layout_square`, `layout_ellipse`,
+`layout_circle`, `layout_polygon`, plus stubs for `layout_curve` and
+`layout_path`).  However, three **post-processing helper functions** that
+Agent C (inline) depends on are absent:
+
+1. **`clip_rect(size: TermSize, radius: &Corners<Option<Rel<Length>>>`, `stroke: &Option<FixedStroke>, outset: &Sides<Rel<Abs>>) -> TermSize`**
+   — Computes the clipping rectangle for a frame, accounting for border radius,
+   stroke width, and outset.  Called from `inline/box.rs:106`:
+   ```rust
+   // TODO(Agent F): replace with `clip_rect(frame.size(), &radius, &stroke, &outset)`
+   if elem.clip.get(styles) {
+       frame.clip(frame.size());  // ← uses raw size, no radius/stroke/outset adjustment
+   }
+   ```
+
+2. **`fill_and_stroke(frame: &mut TermFrame, fill: Option<Paint>, stroke: &Option<FixedStroke>`, `outset: &Sides<Rel<Abs>>, radius: &Corners<Option<Rel<Length>>>, span: Span)`**
+   — Adds background fill and border strokes to an already-laid-out frame.
+   Called from `inline/box.rs:113`:
+   ```rust
+   // TODO(Agent F): call `fill_and_stroke(&mut frame, fill, &stroke, &outset, &radius, span)`
+   // Currently skipped — fill/stroke are not rendered on box frames.
+   ```
+
+3. **`styled_rect(size: TermSize, radius: &Corners<Option<Rel<Length>>>`, `fill: Option<Paint>, stroke: Option<FixedStroke>) -> TermFrame`**
+   — Creates a styled rectangle frame (with fill and/or stroke borders using
+   Unicode box-drawing chars) intended for highlight decoration.  Called from
+   `inline/deco.rs:40`:
+   ```rust
+   // Highlight decoration requires styled_rect from crate::shapes (Agent F).
+   // For now, fall through to the line-based decoration.
+   // TODO: implement highlight when styled_rect is available.
+   ```
+
+**Why they're missing (root cause analysis):**
+
+These three functions are **entirely new constructs for the terminal world**.
+They have no direct paged counterpart.  In the paged version:
+
+- Clipping is done via `Frame::clip(size)` which clips to a raw `Size` in the
+  Frame's own coordinate system — radius/stroke/outset adjustments happen before
+  calling `clip()`.
+- Fill and stroke are baked into the `FrameItem::Shape(Shape { geometry, stroke,
+  fill, fill_rule })` struct.  When a shape is pushed via `frame.push(pos,
+  FrameItem::Shape(...))`, the rendering engine handles fill/stroke natively.
+  There is no separate `fill_and_stroke` step.
+- Highlight decoration in paged is handled by the PDF/SVG renderer directly from
+  the `DecoLine::Highlight` variant — no `styled_rect` helper exists.
+
+The terminal architecture works differently:
+- `TermFrameItem::Shape(TermShape)` stores a **single character** (`stroke_char`,
+  `fill: Option<char>`) and a geometry descriptor.  It cannot represent a filled
+  rectangle with a separate stroke border as one item — the fill and stroke must
+  be separate Shape items or rendered via a different mechanism.
+- `TermFrame::clip(size)` exists in the library (L404-407 of
+  `lynchpin-library-ng/src/frame.rs`) but the current implementation may not
+  account for radius/stroke/outset adjustments.
+- There is no `TermSize → TermSize` clip-rect calculator that adjusts for
+  outset, stroke width, and corner radius.
+
+**What I need to finish this:**
+
+From **Agent A (Library)**:
+1. Clarify whether `TermFrame::clip()` is expected to handle radius/stroke/outset
+   internally, or whether `clip_rect` should compute the adjusted size and pass
+   it to `frame.clip(adjusted_size)`.  If the library is handling it, I just
+   need a `clip_rect` that returns the adjusted size.  If not, the library's
+   `clip()` may need updating.
+2. Confirm that `TermShape` with `TermGeometry::Rect` and a `fill` char of `'█'`
+   (or custom) plus a separate `TermGeometry::Rect` for the border is the
+   intended approach for `fill_and_stroke`.  Alternatively, if a richer
+   `TermFrameItem` variant for filled+stroked rectangles is planned, I'll wait.
+3. A `Sides<Rel<Abs>>` → terminal conversion utility (or I can add inline
+   conversions in shapes.rs using `units::abs_to_cols`).
+
+From **Agent C (inline)**:
+4. Confirm the exact expected signatures shown above.  The comments in box.rs
+   and deco.rs give strong hints but don't specify parameter types precisely.
+   If the expected API differs from what I've inferred, please provide exact
+   function signatures.
+
+---
+
+#### Gap 2: `FrameModifiers` / `FrameModify` / `FrameModifyText` trait system replaced with individual functions
+
+**What's missing vs paged:**
+
+The paged `modifiers.rs` provides a **trait-based modifier pipeline**:
+
+```rust
+// Paged (lynchpin-layout/src/modifiers.rs):
+pub struct FrameModifiers { dest: Option<Destination>, hidden: bool }
+impl FrameModifiers {
+    pub fn get_in(styles: StyleChain) -> Self { ... }  // extract all modifiers from styles
+}
+pub trait FrameModify {
+    fn modify(&mut self, modifiers: &FrameModifiers);   // apply modifiers to a frame
+    fn modified(mut self, modifiers: &FrameModifiers) -> Self { ... }
+}
+pub trait FrameModifyText {
+    fn modify_text(&mut self, styles: StyleChain);       // apply text-level modifiers
+}
+pub fn layout_and_modify<F, R>(styles: StyleChain, layout: F) -> R
+where F: FnOnce(StyleChain) -> R, R: FrameModify { ... }
+```
+
+The terminal `modifiers.rs` replaced this with **individual `TermBlockCallback`
+functions** (`layout_strong`, `layout_emph`, `layout_sub`, `layout_super`,
+`layout_underline`, `layout_overline`, `layout_strike`, `layout_highlight`,
+`layout_smallcaps`).  These are useful as element-level entry points, but they
+don't support the inline modifier pipeline.
+
+**Why the trait system was replaced (root cause analysis):**
+
+The terminal version's individual functions follow the same `TermBlockCallback`
+pattern used by `shapes.rs` — each takes `&Packed<SomeElem>` and returns a
+`SourceResult<TermFrame>`.  This makes them suitable as direct element callbacks
+(in `rules.rs`, `lib.rs` element registrations) but **breaks composition**:
+
+1. **`inline/collect.rs:232-240`** expects to call
+   `FrameModifiers::get_in(styles)` to collect ALL current text modifiers at
+   once, then apply them to a frame returned by `InlineElem::layout()` via
+   `FrameModify::modify`.  Without this, inline child frames (e.g., a shaped
+   text run within an `#emph[]` span) cannot inherit bold/italic/underline from
+   the parent style chain — each modifier would need to be applied by a
+   separate layout pass, which is impractical.
+
+2. **`inline/line.rs`** expects `layout_and_modify(styles, |styles| layout_box(...))`
+   to run layout then apply modifiers in one step, with link de-duplication
+   (suppressing nested `LinkElem` destinations that are already applied at the
+   outer level).  Currently, `inline/line.rs` calls `layout_box` directly,
+   bypassing the modifier pipeline entirely.
+
+3. **`inline/shaping.rs`** expects `FrameModifyText` (a trait on `TermFrame`) to
+   apply text-level modifiers during text shaping — e.g., converting smallcaps
+   to uppercase, or adjusting glyph selection for bold/italic fonts.
+
+4. **`hide` and `link` are lost.**  The paged `FrameModifiers` tracks `HideElem`
+   (`hidden: bool`) and `LinkElem` (`dest: Option<Destination>`).  The terminal
+   `modifiers.rs` has no equivalent — hiding content or creating link regions on
+   a `TermFrame` is not yet implemented.
+
+The individual functions aren't *wrong* — they're necessary for
+`TermBlockCallback`-based element registration.  But they need to **coexist**
+with the trait system, not replace it.
+
+**What I need to finish this:**
+
+From **Agent A (Library)**:
+1. Does `TermFrame` need a `hide()` method (like paged `Frame::hide()`) and/or a
+   way to push `TermFrameItem::Link`?  Currently `TermFrameItem` has `Tag` but
+   no `Link` variant.  If link/hide support is planned for a later round, I can
+   stub those parts of `FrameModifiers`.
+2. Should `TermFrame` implement `FrameModify` and `FrameModifyText` directly, or
+   should the terminal crate define its own terminal-specific equivalents (e.g.,
+   `TermModifiers` / `TermModify` / `TermModifyText`)?  The paged version
+   implements these traits on `Frame` in `modifiers.rs` itself — the traits are
+   defined and implemented in the same file.  I'd follow the same pattern for
+   `TermFrame`.
+
+From **Agent C (inline)**:
+3. Confirm expected usage:
+   - `FrameModifiers::get_in(styles)` should return a struct with all current
+     text modifiers (bold, italic, underline, strikethrough, overline, highlight,
+     smallcaps, sub/super, link dest, hidden).
+   - `TermFrame::modify(&modifiers)` should walk all `TermFrameItem::Text` items
+     and set their `ContentStyle` attributes accordingly.
+   - `layout_and_modify(styles, layout)` should: (a) extract modifiers from
+     `styles`, (b) strip redundant modifiers from `styles` (link de-dup),
+     (c) call `layout(styles)`, (d) apply `.modify(&modifiers)` to the result.
+
+From **Architecture**:
+4. Should the individual `layout_strong`/`layout_emph`/etc functions remain as
+   `TermBlockCallback` entry points AND the trait system be added back for the
+   inline pipeline?  My assessment: **both are needed** — the individual
+   functions for element dispatch, the trait system for inline composition.
+   Confirmation requested.
+
+### Agent E — Blocker report
+
+**Question:** Why are `shared.rs` and `stretch.rs` missing from the math module?
+Short answer: **by design**, not by oversight.  The new module (`lynchpin-layout-ng`)
+uses a fundamentally different architecture from the old (`lynchpin-layout`).
+Below is a function-by-function analysis of what each missing file provided, where
+that functionality lives now (if anywhere), and whether any real gaps remain.
+
+---
+
+#### 1. `stretch.rs` — Glyph-level font stretching
+
+| Old function | What it did | Status in `-ng` |
+|---|---|---|
+| `layout_stretch(elem, ctx, styles)` | Entry point for `StretchElem`. Laid out the body, then called `stretch_fragment`. | ✅ **Ported** to `lr::layout_stretch` (L196).  The new version extracts a single char from the body and delegates to `hstretch_char` — terminal-friendly character repetition. No font-construction-table lookup. |
+| `stretch_fragment(ctx, frag, axis, rel_to, stretch, short_fall)` | Low-level glyph stretching using `stretch_axes()` (OpenType MATH font construction tables). Could stretch along X or Y axis. | ❌ **Not ported.**  The new module cannot sub-pixel-scale glyphs.  Vertical delimiter stretching is handled by `stretched_delimiter()` in `mat.rs` (L234) which maps `(` → a composed sequence like `⎛ ⎜ ⎝`.  Horizontal stretch is handled by `hstretch_char()` in `lr.rs` (L234) which repeats characters (e.g. `→` → `───→`).  **No gap.** |
+
+**Verdict:** `stretch.rs` is fully replaced.  The old `stretch_fragment` relied on
+font internals (`stretch_axes`, `GlyphFragment::stretch`) that don't exist in the
+terminal rendering model.  The replacements (`stretched_delimiter`, `hstretch_char`)
+cover the same use cases with terminal-appropriate techniques.
+
+---
+
+#### 2. `shared.rs` — Shared math utilities
+
+This is the more interesting file.  It contains **four categories** of functionality:
+
+##### 2a. OpenType feature style helpers — ❌ Not ported (not needed)
+
+| Function | What it does | Why not needed |
+|---|---|---|
+| `style_cramped()` | Sets `EquationElem::cramped = true` in the style chain. Used by `accent.rs`, `underover.rs`, `root.rs` for sub-formulas that should use cramped glyph variants. | Terminal fonts don't have separate cramped/non-cramped glyph variants. The new `accent.rs`, `underover.rs`, and `root.rs` simply lay out content at normal size with no style manipulation. **No gap.** |
+| `style_flac()` | Sets the `flac` OpenType feature (flat accents for superscripts). Used by `accent.rs`. | Terminal fonts don't support OpenType features. The new `accent.rs` places the accent char directly. **No gap.** |
+| `style_dtls()` | Sets the `dtls` OpenType feature (dotless forms). Used by `accent.rs`, `text.rs`. | Same reason — no OpenType in the terminal. **No gap.** |
+
+##### 2b. Math-size style chain helpers — ❌ Not ported (not needed)
+
+| Function | What it does | Why not needed |
+|---|---|---|
+| `style_for_subscript(styles)` | Returns `[superscript_style, cramped]` — steps the math size down one level for subscripts. Used by `attach.rs`, `underover.rs`. | The new module doesn't chain Typst styles for sizing.  Sub/superscripts in `attach.rs` are laid out at the same terminal font size as the base.  The old module used these to select smaller font glyphs; the terminal has no font-size distinction.  **No gap for terminal rendering.** |
+| `style_for_superscript(styles)` | Steps math size down for superscripts. Used by `underover.rs`. | Same reasoning. |
+| `style_for_numerator(styles)` | Steps math size down for fraction numerators. | The new `frac.rs` uses a vertical stack with a horizontal rule; numerator/denominator are rendered at the same size. |
+| `style_for_denominator(styles)` | Returns `[numerator_style, cramped]` for denominators. Used by `mat.rs`. | Same reasoning. |
+
+##### 2c. Layout composition primitives — ⚠️ Real gap
+
+| Function | What it does | Status in `-ng` |
+|---|---|---|
+| `stack(rows, align, gap, baseline, alternator)` | Stacks multiple `MathRun` rows vertically into a single `Frame`, respecting alignment points. Used by `underover.rs` for stacking above/below annotations. | ❌ **Not ported.**  The new `underover.rs` uses `compose_vertical()` from `run.rs` instead.  Need to verify this covers all cases (especially alignment-point-aware stacking). |
+| `alignments(rows)` | Computes alignment point positions across a set of `MathRun` rows.  Used by `mat.rs` for matrices with alignment columns. | ❌ **Not ported.**  The new `mat.rs` may use a simpler approach.  If matrices with `&` alignment points are expected to work, this **is a real gap**. |
+| `AlignmentResult { points, width }` | Data struct returned by `alignments`. | ❌ **Not ported** (only needed if `alignments` is ported). |
+| `DELIM_SHORT_FALL` | Constant `Em::new(0.1)` — how much shorter scaled delimiters can be than their wrapped content. Used by `mat.rs`, `lr.rs`. | ❌ **Not ported.**  The new delimiter stretching uses exact row-matching (`stretched_delimiter` in `mat.rs`), not sub-pixel sizing, so the fall constant isn't applicable. **No gap.** |
+
+##### 2d. Font family resolution — ❌ Not ported (not needed)
+
+| Function | What it does | Why not needed |
+|---|---|---|
+| `families(styles)` | Returns a prioritized iterator of font families for math (user font → fallback chain: New Computer Modern Math, Libertinus, emoji fonts). Used by `mod.rs` for font lookups. | The terminal uses a single monospace font.  No font-family resolution is needed. **No gap.** |
+
+---
+
+#### 3. Potential real gaps (action items)
+
+1. **`alignments()` / `AlignmentResult`** — if the `-ng` `mat.rs` is expected to
+   support alignment points in matrices (the `&` marker in `mat(...)`), this
+   functionality needs to be ported or reimplemented.  The old `mat.rs` uses
+   `alignments(&rows)` at L262 to compute column widths from alignment points.
+   The new `mat.rs` should be checked for this.
+
+2. **`stack()`** — the old `underover.rs` uses `stack()` to compose multi-row
+   under/over annotations with gap spacing and baseline selection.  The new
+   `underover.rs` uses `compose_vertical()` which may or may not handle the same
+   cases.  Worth a quick audit.
+
+3. **`stretch_fragment` callers** — the old `attach.rs` (L80) calls `stretch_fragment`
+   to stretch the base glyph of an attachment (e.g., stretching `∑` under limits).
+   The new `attach.rs` does NOT call any stretch equivalent.  If display-mode
+   large operators (∑, ∏, ∫) need to be visually enlarged, this is a gap.
+
+---
+
+#### 4. Summary
+
+| Category | Count | Action |
+|---|---|---|
+| Deliberately omitted (terminal doesn't need it) | 9 functions | No action |
+| Replaced with terminal-specific equivalent | 2 functions (`layout_stretch`, `stretch_fragment`) | Already done |
+| Potentially missing (needs audit) | 3 functions (`stack`, `alignments`, stretch in attach) | Audit recommended |
+
+**Bottom line:** `shared.rs` and `stretch.rs` are not missing by accident.  The
+terminal math module replaced font-level styling and glyph construction with
+character-composition and fixed-grid layout.  The only real concern is whether
+alignment-point logic (`alignments`, `stack`) was adequately replaced in `mat.rs`
+and `underover.rs`.
+
+---
+
+### Agent C — Blocker report
+
+Three blockers identified.  Here is each, what it depends on, and why it
+cannot proceed until the dependency is resolved.
+
+---
+
+#### Blocker 1: `unimplemented!("vertical text layout")` in `shaping.rs:799`
+
+**File:** `src/inline/shaping.rs`
+
+**Code:**
+
+```rust
+buffer.set_direction(match ctx.dir {
+    Dir::LTR => rustybuzz::Direction::LeftToRight,
+    Dir::RTL => rustybuzz::Direction::RightToLeft,
+    _ => unimplemented!("vertical text layout"),
+});
+```
+
+**What it does:** When the text direction is something other than LTR or RTL
+(e.g., top-to-bottom), the shaper panics at runtime.  There is no fallback —
+any input that triggers a vertical-writing-mode codepath will crash the
+process.
+
+**Root cause / dependency:**
+
+The `Dir` enum in typst has variants beyond LTR/RTL (TTB, BTT).  The terminal
+crate defines its own `Dir` (in `src/dir.rs`) but currently only has
+`LeftToRight` and `RightToLeft`.  A vertical direction cannot even be
+represented in the terminal type system.  So this is **not** just a matter of
+mapping vertical `Dir` to a rustybuzz direction — there is no terminal
+`Dir::TTB` to match on.
+
+**Blocked by:** **Agent A (Library).**  The terminal `Dir` enum must gain
+vertical variants before the inline shaper can handle them.  This is a
+library-level design decision: does the terminal even support vertical text?
+
+**Severity:** **High** — runtime panic, not a graceful degradation.
+
+**Mitigation options while waiting:**
+1. Map all non-LTR/non-RTL directions to LTR with a warning.  This silently
+   produces wrong output but avoids the panic.
+2. Return an error from `shape_range` / `shape_segment` for vertical runs so
+   the caller can skip them gracefully.
+
+---
+
+#### Blocker 2: Box body layout returns empty frame (`inline/box.rs:57-70`)
+
+**File:** `src/inline/box.rs`
+
+**Code (abridged):**
+
+```rust
+let mut frame = match elem.body.get_ref(styles) {
+    None => TermFrame::new(TermSize { cols: TermScalar::ZERO, rows: TermScalar::ZERO }),
+    Some(_body) => {
+        // For now, return an empty frame since layout_frame is not available.
+        TermFrame::new(TermSize { cols: TermScalar::ZERO, rows: TermScalar::ZERO })
+    }
+};
+```
+
+**What it does:** When a `BoxElem` has a body (child content), the body is
+completely ignored.  The returned frame is zero-sized.  This means any box
+with content renders as an invisible 0×0 cell.
+
+**Cascading effects in the same function (same file):**
+- **L106–108:** `clip_rect` is replaced with `frame.clip(size())` (a library
+  no-op).  **Depends on Agent F** (`crate::shapes::clip_rect`).
+- **L113–115:** `fill_and_stroke` is entirely skipped.  **Depends on Agent F**
+  (`crate::shapes::fill_and_stroke`).
+- **L118–120:** `TermFrame::label()` call is commented out.  **Depends on
+  Agent A** — library must expose `TermFrame::label()`.
+
+**Blocked by:**
+| Dependency | Agent | Status |
+|---|---|---|
+| `layout_frame(engine, body, locator, styles, pod)` | Agent B (flow) or Agent F | Missing — this is the function that recursively lays out child content into a `TermFrame`.  Without it, no child can be rendered. |
+| `clip_rect(size, radius, stroke, outset)` | Agent F (shapes) | Missing |
+| `fill_and_stroke(frame, fill, stroke, outset, radius, span)` | Agent F (shapes) | Missing |
+| `TermFrame::label(Label)` | Agent A (Library) | Reported done in Round 3; TODO remains |
+
+**Severity:** **Critical** — all box elements (the most common container in
+typst) render empty.  This is the single biggest visual gap in inline layout.
+
+**What Agent C can do now:** Nothing.  The body-layout call chain needs
+`layout_frame` to exist.  Once Agent B/F delivers it, the `Some(_body)` arm
+can be replaced with a real call.
+
+---
+
+#### Blocker 3: Frame→TermFrame item conversion is stubbed (`inline/collect.rs:243`)
+
+**File:** `src/inline/collect.rs`
+
+**Code (abridged):**
+
+```rust
+InlineItem::Frame(frame) => {
+    let mut term_frame = TermFrame::new(TermSize::new(
+        TermScalar::from_f64(frame.size().x.to_raw()),
+        TermScalar::from_f64(frame.size().y.to_raw()),
+    ));
+    // TODO: copy items from frame to term_frame when conversion is available
+    let _ = frame;
+    apply_shift(&engine.world, &mut term_frame, styles);
+    collector.push_item(Item::Frame(term_frame));
+}
+```
+
+**What it does:** When an `InlineItem::Frame` (a typst paged `Frame` produced
+by child layout) needs to be embedded into the inline collector's item stream,
+it creates a `TermFrame` with the correct **size** but **discards all items**.
+The structured content of the child frame (shapes, text runs, tags) is lost.
+
+**Cascading effect — `FrameModifiers` pipeline bypassed:**
+
+The same file also bypasses `FrameModifiers::get_in` / `FrameModify::modify`
+(commented out at ~L237–239) and calls `layout_box` directly instead of
+`layout_and_modify` (noted at ~L252–256).  Both depend on the
+`FrameModifiers`/`FrameModify`/`layout_and_modify` system from **Agent F**.
+
+**Blocked by:**
+| Dependency | Agent | Status |
+|---|---|---|
+| `FrameModifiers` type + `FrameModify` trait + `layout_and_modify` fn | Agent F (modifiers) | Missing — the paged `modifiers.rs` system was replaced with individual functions; the trait-based pipeline doesn't exist in the terminal crate |
+| `Frame` → `TermFrame` item-by-item converter | Agent F (or shared) | Not implemented — requires mapping every `FrameItem` variant (Shape, Text, Group, etc.) to a corresponding `TermFrameItem` |
+
+**Severity:** **High** — any inline element that produces a sub-frame (images,
+embedded layouts, transforms) renders as an empty placeholder.
+
+**What Agent C can do now:** Nothing.  The converter needs the complete
+`TermFrameItem` type from the library (Agent A) and a decision on how to map
+paged `FrameItem` variants that have no terminal equivalent.  Agent F owns
+this mapping.
+
+---
+
+#### Summary
+
+| # | Blocker | Severity | Blocked by |
+|---|---|---|---|
+| 1 | `unimplemented!("vertical text layout")` panic | High | Agent A (Library) — terminal `Dir` needs vertical variants |
+| 2 | Box body layout returns empty frame | Critical | Agent B/F (flow) — `layout_frame` missing; Agent F (shapes) — `clip_rect`/`fill_and_stroke` missing |
+| 3 | Frame→TermFrame conversion stubbed | High | Agent F (modifiers + converter) — `FrameModifiers` pipeline + item mapping |
+
+**Bottom line:** Agent C's inline layout engine is structurally complete
+(line breaking, shaping, bidi, justification all work), but it cannot render
+child content because both the recursive layout entry point (`layout_frame`)
+and the frame-item converter are owned by other agents and are not yet
+available.
+
+## Agent A: Inline replaced (Round 4)
+
+Deleted 9 files (4045 lines). Replaced with inline/mod.rs (470 lines) based on term-layout.
+
+Added: ParSituation, first_line_indent, hanging_indent, justify, layout_par entry point.
+Removed: HarfBuzz shaping, Knuth-Plass, BiDi, glyph-level CJK.
+
+0 compile errors.
