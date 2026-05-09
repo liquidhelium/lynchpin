@@ -36,9 +36,9 @@ use crossterm::style::{Attribute, Color, ContentStyle};
 use typst::__warning;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::{Content, SequenceElem, StyleChain, StyledElem};
+use typst::foundations::{Content, Resolve, SequenceElem, StyleChain, StyledElem};
 use typst::layout::{
-    BlockBody, BlockElem, BoxElem, HElem, HideElem, LayoutElem, PagebreakElem, VElem,
+    BlockBody, BlockElem, BoxElem, HElem, HideElem, LayoutElem, PagebreakElem, PlaceElem, VElem,
 };
 use typst::math::EquationElem;
 use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, ParbreakElem, TermsElem};
@@ -48,7 +48,7 @@ use typst::text::{LinebreakElem, RawContent, RawElem, RawLine, SpaceElem, TextEl
 use lynchpin_library::TermBlockElem;
 
 use crate::config::TermConfig;
-use crate::frame::{Row, TermFrame, TermSize};
+use crate::frame::{Col, Row, TermFrame, TermPoint, TermSize};
 use crate::inline::layout_paragraph;
 use crate::lists::{render_enum_item, render_list_item, render_term_item};
 use crate::stack::compose_vertical;
@@ -64,6 +64,29 @@ pub struct TermPage {
     pub frame: TermFrame,
 }
 
+// ── Item model (mirrors paged distribute.rs) ────────────────────────────────
+
+/// A laid-out item waiting for page assembly.
+pub enum Item {
+    /// A regular block frame with its alignment.
+    Frame(TermFrame),
+    /// An absolutely placed frame (from `#place`). Stamped onto the page,
+    /// replacing only non-blank cells in the target area.
+    Placed {
+        frame: TermFrame,
+        /// Horizontal alignment (None = flow position).
+        align_x: Option<typst::layout::FixedAlignment>,
+        /// Vertical alignment (None = flow position).
+        align_y: Option<typst::layout::FixedAlignment>,
+        /// Terminal columns offset (dx, dy).
+        delta: (Col, Row),
+    },
+    /// Absolute vertical spacing.
+    Abs(Row),
+    /// Fractional spacing (for stack layout).
+    Fr(typst::layout::Fr),
+}
+
 /// Layout a single content node as a block, returning one frame.
 /// Used by stack/place callbacks that need recursive block layout.
 pub fn layout_block(
@@ -74,10 +97,82 @@ pub fn layout_block(
 ) -> SourceResult<TermFrame> {
     let mut state = FlowState::new(config);
     handle_block(&mut state, engine, content, styles)?;
-    if state.blocks.is_empty() {
-        Ok(TermFrame::new(TermSize::ZERO))
+    finalize(state.items, config)
+}
+
+// ── Finalize: assemble items into a single frame ─────────────────────────────
+
+fn finalize(items: Vec<Item>, config: &TermConfig) -> SourceResult<TermFrame> {
+    if items.is_empty() {
+        return Ok(TermFrame::new(TermSize::ZERO));
+    }
+    let width = config.width.unwrap_or(80) as Col;
+    // First pass: compute total height needed.
+    let mut frames: Vec<TermFrame> = Vec::new();
+    for item in &items {
+        match item {
+            Item::Frame(f) if !f.size().is_empty() => frames.push(f.clone()),
+            Item::Abs(r) if *r > 0 => frames.push(TermFrame::new(TermSize::new(0, *r))),
+            Item::Placed { .. } | Item::Fr(_) | Item::Frame(_) | Item::Abs(_) => {}
+        }
+    }
+    if frames.is_empty() && !items.iter().any(|i| matches!(i, Item::Placed { .. })) {
+        return Ok(TermFrame::new(TermSize::ZERO));
+    }
+
+    // Compose regular frames vertically, or create a blank base for placed-only.
+    let (mut base, regular_height) = if frames.is_empty() {
+        let max_h = items.iter().filter_map(|i| match i {
+            Item::Placed { frame, .. } => Some(frame.rows()),
+            _ => None,
+        }).max().unwrap_or(1);
+        (TermFrame::new(TermSize::new(width, max_h)), 0)
     } else {
-        Ok(compose_vertical(state.blocks, 1, 0))
+        let composed = compose_vertical(frames, 1, 0);
+        let h = composed.rows();
+        (composed, h)
+    };
+
+    // Second pass: stamp placed items onto the base.
+    let flow_y = regular_height;
+    for item in &items {
+        if let Item::Placed { frame, align_x, align_y, delta } = item {
+            let w = base.cols().max(width);
+            let cx = match align_x {
+                Some(a) => align_pos(*a, w - frame.cols()),
+                None => 0,
+            } + delta.0;
+            let cy = match align_y {
+                Some(a) => align_pos(*a, base.rows() - frame.rows()),
+                None => flow_y,
+            } + delta.1;
+            // Ensure base is tall and wide enough.
+            if cy + frame.rows() > base.rows() {
+                base.set_rows(cy + frame.rows());
+            }
+            if cx + frame.cols() > base.cols() {
+                base.set_cols(cx + frame.cols());
+            }
+            stamp_frame(&mut base, frame, cx, cy);
+        }
+    }
+    Ok(base)
+}
+
+/// Stamp `src` onto `dst` at (col, row). Non-blank cells of `src` replace
+/// cells in `dst`.
+fn stamp_frame(dst: &mut TermFrame, src: &TermFrame, col: Col, row: Row) {
+    for (pos, item) in src.items() {
+        let tc = col + pos.col;
+        let tr = row + pos.row;
+        match item {
+            lynchpin_library::frame::TermFrameItem::Text(t, style) => {
+                dst.push_text(TermPoint::new(tc, tr), t.clone(), *style);
+            }
+            lynchpin_library::frame::TermFrameItem::Frame(f) => {
+                dst.push_frame(TermPoint::new(tc, tr), f.clone());
+            }
+        }
     }
 }
 
@@ -86,32 +181,45 @@ pub fn layout_block(
 /// Mutable state threaded through the recursive block handler.
 struct FlowState<'cfg> {
     config: &'cfg TermConfig,
-    /// Accumulated block frames (not yet composed).
-    blocks: Vec<TermFrame>,
+    /// Accumulated items (not yet composed).
+    items: Vec<Item>,
     /// Current enumeration counter (reset when a new `EnumElem` starts).
     enum_counter: u64,
+}
+
+fn align_pos(a: typst::layout::FixedAlignment, available: Col) -> Col {
+    match a {
+        typst::layout::FixedAlignment::Start => 0,
+        typst::layout::FixedAlignment::Center => available / 2,
+        typst::layout::FixedAlignment::End => available,
+    }
 }
 
 impl<'cfg> FlowState<'cfg> {
     fn new(config: &'cfg TermConfig) -> Self {
         Self {
             config,
-            blocks: Vec::new(),
+            items: Vec::new(),
             enum_counter: 1,
         }
     }
 
-    /// Push a block frame.  Empty frames are silently dropped.
+    /// Push a block frame.
     fn push(&mut self, frame: TermFrame) {
         if !frame.size().is_empty() {
-            self.blocks.push(frame);
+            self.items.push(Item::Frame(frame));
         }
+    }
+
+    /// Push a placed frame.
+    fn push_placed(&mut self, frame: TermFrame, align_x: Option<typst::layout::FixedAlignment>, align_y: Option<typst::layout::FixedAlignment>, delta: (Col, Row)) {
+        self.items.push(Item::Placed { frame, align_x, align_y, delta });
     }
 
     /// Insert a blank gap of `rows` rows.
     fn push_blank(&mut self, rows: Row) {
         if rows > 0 {
-            self.blocks.push(TermFrame::new(TermSize::new(0, rows)));
+            self.items.push(Item::Abs(rows));
         }
     }
 }
@@ -268,18 +376,16 @@ fn handle_block(
 
     // ── Hide ──────────────────────────────────────────────────────────────────
     } else if let Some(elem) = child.to_packed::<HideElem>() {
-        // Measure the body by routing it through a temporary FlowState, then
-        // emit a blank frame of the same height so the space is preserved.
         let mut tmp = FlowState::new(state.config);
         handle_block(&mut tmp, engine, &elem.body, styles)?;
-        if !tmp.blocks.is_empty() {
-            let composed = compose_vertical(tmp.blocks, 1, 0);
-            if composed.rows() > 0 {
-                // Push directly (bypasses is_empty check) to keep the space.
-                state
-                    .blocks
-                    .push(TermFrame::new(TermSize::new(0, composed.rows())));
-            }
+        // Measure total height of child items.
+        let total_rows: Row = tmp.items.iter().map(|i| match i {
+            Item::Frame(f) => f.rows().max(1),
+            Item::Abs(r) => *r,
+            _ => 0,
+        }).sum();
+        if total_rows > 0 {
+            state.items.push(Item::Abs(total_rows));
         }
 
     // ── Block / box containers ────────────────────────────────────────────────
@@ -341,6 +447,18 @@ fn handle_block(
         // Rare after realize_term, but handle gracefully.
         let frame = layout_paragraph(engine, child, state.config, styles, ContentStyle::default())?;
         state.push(frame);
+
+    // ── Place (handled here, not via show rule — see paged collect.rs) ───────
+    } else if let Some(elem) = child.to_packed::<PlaceElem>() {
+        let body_frame = layout_block(engine, &elem.body, state.config, styles)?;
+        let (align_x, align_y) = match elem.alignment.get(styles) {
+            typst::foundations::Smart::Custom(a) => (
+                a.x().map(|x| x.resolve(styles)),
+                a.y().map(|y| y.resolve(styles)),
+            ),
+            _ => (None, None),
+        };
+        state.push_placed(body_frame, align_x, align_y, (0, 0));
 
     // ── TermBlockElem (terminal-specific block with layout callback) ─────────
     } else if let Some(tb) = child.to_packed::<TermBlockElem>() {
@@ -433,12 +551,8 @@ pub fn layout_document<'a>(
         }
     }
 
-    // Compose all block frames vertically with a 1-row gap between each.
-    let page_frame = if state.blocks.is_empty() {
-        TermFrame::new(TermSize::ZERO)
-    } else {
-        compose_vertical(state.blocks, 1, 0)
-    };
+    // Compose all items into a single page frame.
+    let page_frame = finalize(state.items, config)?;
 
     Ok(vec![TermPage { frame: page_frame }])
 }

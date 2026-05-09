@@ -9,7 +9,7 @@
 
 use typst::foundations::{NativeElement, NativeRuleMap, ShowFn};
 use typst::foundations::{Context, dict};
-use typst::layout::{Abs, GridElem, LayoutElem, PadElem, PlaceElem, StackElem};
+use typst::layout::{Abs, GridElem, LayoutElem, PadElem, StackElem};
 use typst::model::TableElem;
 use comemo::Track;
 
@@ -24,7 +24,6 @@ pub fn register(rules: &mut NativeRuleMap) {
     rules.register(Target::Paged, STACK_RULE);
     rules.register(Target::Paged, GRID_RULE);
     rules.register(Target::Paged, TABLE_RULE);
-    rules.register(Target::Paged, PLACE_RULE);
     rules.register(Target::Paged, LAYOUT_RULE);
     rules.register(Target::Paged, PAD_RULE);
 }
@@ -62,32 +61,7 @@ const TABLE_RULE: ShowFn<TableElem> = |elem, _, _| {
     .spanned(elem.span()))
 };
 
-// ── Place ────────────────────────────────────────────────────────────────────
-
-const PLACE_RULE: ShowFn<PlaceElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| {
-            let body_frame = crate::inline::layout_paragraph(
-                engine, &elem.body, config, styles,
-                crossterm::style::ContentStyle::default(),
-            )?;
-            let max_w = config.width.map(|w| w as i32).unwrap_or(body_frame.cols() as i32);
-            let cx = ((max_w - body_frame.cols()).max(0)) / 2;
-            let mut frame = TermFrame::new(lynchpin_library::frame::TermSize::new(
-                max_w.max(0),
-                body_frame.rows(),
-            ));
-            frame.push_frame(
-                lynchpin_library::frame::TermPoint::new(cx, 0),
-                body_frame,
-            );
-            Ok(frame)
-        },
-    ))
-    .pack()
-    .spanned(elem.span()))
-};
+// ── Place — handled directly in handle_block (flow.rs), no show rule.
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
