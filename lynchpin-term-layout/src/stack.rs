@@ -157,7 +157,7 @@ impl<'a> StackLayouter<'a> {
         Ok(())
     }
 
-    fn finish(mut self) -> TermFrame {
+    fn finish(self) -> TermFrame {
         let full_main = match self.axis {
             Axis::X => self.initial.cols,
             Axis::Y => self.initial.rows,

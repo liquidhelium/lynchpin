@@ -9,9 +9,9 @@ use typst::engine::Engine;
 use typst::foundations::{Content, Smart, StyleChain};
 
 use crate::config::TermConfig;
-use crate::frame::TermFrame;
+use crate::frame::{TermFrame, TermSize};
 use crate::inline::layout_paragraph;
-use crate::stack::compose_horizontal;
+use crate::stack::{compose_horizontal, compose_vertical};
 
 // ── Bullet list ───────────────────────────────────────────────────────────────
 
@@ -90,4 +90,68 @@ pub fn render_term_item(
         vec![term_frame, sep_frame, desc_frame],
         0,
     ))
+}
+
+// ── List-level wrappers ──────────────────────────────────────────────────────
+
+pub fn render_list(
+    engine: &mut Engine,
+    elem: &typst::foundations::Packed<typst::model::ListElem>,
+    config: &TermConfig,
+    styles: typst::foundations::StyleChain,
+) -> SourceResult<TermFrame> {
+    let mut frames = Vec::new();
+    for item in &elem.children {
+        let f = render_list_item(engine, &item.body, config, styles)?;
+        if !f.size().is_empty() {
+            frames.push(f);
+        }
+    }
+    Ok(if frames.is_empty() {
+        TermFrame::new(TermSize::ZERO)
+    } else {
+        compose_vertical(frames, 0, 0)
+    })
+}
+
+pub fn render_enum(
+    engine: &mut Engine,
+    elem: &typst::foundations::Packed<typst::model::EnumElem>,
+    config: &TermConfig,
+    styles: typst::foundations::StyleChain,
+) -> SourceResult<TermFrame> {
+    let mut counter = elem.start.get(styles).unwrap_or(1);
+    let mut frames = Vec::new();
+    for item in &elem.children {
+        let number = item.number.get(styles);
+        let f = render_enum_item(engine, number, &mut counter, &item.body, config, styles)?;
+        if !f.size().is_empty() {
+            frames.push(f);
+        }
+    }
+    Ok(if frames.is_empty() {
+        TermFrame::new(TermSize::ZERO)
+    } else {
+        compose_vertical(frames, 0, 0)
+    })
+}
+
+pub fn render_terms(
+    engine: &mut Engine,
+    elem: &typst::foundations::Packed<typst::model::TermsElem>,
+    config: &TermConfig,
+    styles: typst::foundations::StyleChain,
+) -> SourceResult<TermFrame> {
+    let mut frames = Vec::new();
+    for item in &elem.children {
+        let f = render_term_item(engine, &item.term, &item.description, config, styles)?;
+        if !f.size().is_empty() {
+            frames.push(f);
+        }
+    }
+    Ok(if frames.is_empty() {
+        TermFrame::new(TermSize::ZERO)
+    } else {
+        compose_vertical(frames, 0, 0)
+    })
 }

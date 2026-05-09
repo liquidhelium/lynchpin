@@ -13,7 +13,7 @@ use typst::layout::{Abs, GridElem, LayoutElem, PadElem, StackElem};
 use typst::model::TableElem;
 use comemo::Track;
 
-use lynchpin_library::{TermBlockCallback, TermBlockElem, frame::TermFrame};
+use lynchpin_library::{TermBlockCallback, TermBlockElem};
 
 use crate::grid::{layout_grid, layout_table};
 
@@ -61,7 +61,7 @@ const TABLE_RULE: ShowFn<TableElem> = |elem, _, _| {
     .spanned(elem.span()))
 };
 
-// ── Place — handled directly in handle_block (flow.rs), no show rule.
+// ── Place — handled directly in collect.rs, no show rule.
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
