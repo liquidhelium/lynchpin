@@ -1,0 +1,13 @@
+[package]
+name = "lynchpin-library-ng"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+typst = { workspace = true }
+typst-library = { workspace = true }
+typst-macros = "0.14"
+crossterm = "0.29"
+unicode-width = "0.2"
+ecow = "0.2"
+comemo = "0.5"

@@ -1844,7 +1844,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "lynchpin-layout-ng"
+version = "0.1.0"
+dependencies = [
+ "az",
+ "bumpalo",
+ "comemo",
+ "crossterm",
+ "ecow",
+ "either",
+ "hypher",
+ "icu_properties 1.5.1",
+ "icu_provider 1.5.0",
+ "icu_provider_adapters",
+ "icu_provider_blob",
+ "icu_segmenter",
+ "kurbo 0.12.0",
+ "lynchpin-library-ng",
+ "memchr",
+ "rustc-hash",
+ "rustybuzz",
+ "smallvec",
+ "ttf-parser",
+ "typst",
+ "typst-assets",
+ "typst-library",
+ "typst-macros",
+ "typst-syntax",
+ "typst-timing",
+ "typst-utils",
+ "unicode-bidi",
+ "unicode-math-class",
+ "unicode-script",
+ "unicode-segmentation",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
 name = "lynchpin-library"
+version = "0.1.0"
+dependencies = [
+ "comemo",
+ "crossterm",
+ "ecow",
+ "typst",
+ "typst-library",
+ "typst-macros",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "lynchpin-library-ng"
 version = "0.1.0"
 dependencies = [
  "comemo",
