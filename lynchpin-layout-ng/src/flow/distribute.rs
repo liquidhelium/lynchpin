@@ -18,7 +18,7 @@ use typst::introspection::Tag;
 use typst::layout::{FixedAlignment, Fr};
 
 use lynchpin_library_ng::{
-    Col, Row, TermFrame, TermPoint, TermRegions, TermScalar, TermSize,
+    Col, Row, TermFrame, TermFragment, TermPoint, TermRegions, TermScalar, TermSize,
 };
 
 use super::Config;
@@ -219,14 +219,14 @@ impl<'x> Distributor<'x> {
 
         let width = self.config.width;
         let frames = std::mem::take(&mut self.pending_frames);
+        let mut result = TermFrame::new(TermSize::new(width, self.current_y));
         let mut y = TermScalar::ZERO;
-        let total_rows = frames.iter().map(|f| f.rows().max(TermScalar::ONE)).sum::<Row>();
-        let mut result = TermFrame::new(TermSize::new(width, total_rows.max(self.current_y)));
         for frame in frames {
             let h = frame.rows().max(TermScalar::ONE);
             result.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
             y = y + h + TermScalar::new(1);
         }
+        result.set_rows(y);
         self.finished.push(result);
 
         Ok(())
