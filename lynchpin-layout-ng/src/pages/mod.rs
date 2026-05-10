@@ -26,24 +26,8 @@ use self::run::{layout_blank_page, layout_page_run};
 
 // ── TermDocument ─────────────────────────────────────────────────────────────
 
-/// A terminal document: one or more [`TermPage`]s.
-///
-/// Terminal equivalent of `PagedDocument`.  In single-page mode this
-/// contains exactly one `TermPage`.
-pub type TermDocument = Vec<TermPage>;
-
-// ── TermPage ─────────────────────────────────────────────────────────────────
-
-/// A single page of terminal output.
-///
-/// Wraps a [`TermFrame`] with optional page-level metadata.
-#[derive(Debug, Clone)]
-pub struct TermPage {
-    /// The page's frame.
-    pub frame: TermFrame,
-    /// Page number (0-based in terminal).
-    pub number: usize,
-}
+// Re-export from library-ng.
+pub use lynchpin_library_ng::{TermDocument, TermPage};
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
@@ -108,9 +92,9 @@ fn layout_pages<'a>(
     // Add the remaining tags to the very end of the last page.
     if !tags.is_empty() {
         if let Some(last) = pages.last_mut() {
-            let pos = TermPoint::new(TermScalar::ZERO, last.frame.rows());
+            let pos = TermPoint::new(TermScalar::ZERO, last.inner.rows());
             for _tag in tags.drain(..) {
-                last.frame.push_text(pos, EcoString::new(), ContentStyle::default());
+                last.inner.push_text(pos, EcoString::new(), ContentStyle::default());
             }
         }
     }

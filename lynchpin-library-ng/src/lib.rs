@@ -135,6 +135,20 @@ impl FromValue for TermBlockCallback {
     }
 }
 
+// ── TermPage / TermDocument ──────────────────────────────────────────────────
+
+/// A single terminal page — mirrors paged `Page`.
+#[derive(Debug, Clone)]
+pub struct TermPage {
+    /// The page content frame.
+    pub inner: TermFrame,
+    /// Page number (1-based).
+    pub number: usize,
+}
+
+/// A terminal document — mirrors paged `PagedDocument`.
+pub type TermDocument = Vec<TermPage>;
+
 // ── TermFragment ─────────────────────────────────────────────────────────────
 
 /// A sequence of terminal frames — terminal equivalent of `Fragment`.

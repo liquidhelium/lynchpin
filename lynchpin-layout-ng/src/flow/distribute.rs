@@ -18,7 +18,7 @@ use typst::introspection::Tag;
 use typst::layout::{FixedAlignment, Fr};
 
 use lynchpin_library_ng::{
-    Col, Row, TermFrame, TermRegions, TermScalar, TermSize,
+    Col, Row, TermFrame, TermPoint, TermRegions, TermScalar, TermSize,
 };
 
 use super::Config;
@@ -74,6 +74,7 @@ pub fn distribute(
         regions: regions.clone(),
         items,
         finished: Vec::new(),
+            pending_frames: Vec::new(),
         sticky: None,
         current_y: TermScalar::ZERO,
     };
@@ -88,6 +89,8 @@ struct Distributor<'x> {
     regions: TermRegions,
     items: Vec<Item<'x>>,
     finished: Vec<TermFrame>,
+    /// Frames collected in the current region, to be composed in finish_region.
+    pending_frames: Vec<TermFrame>,
     /// Snapshot for rolling back sticky blocks.
     sticky: Option<DistributionSnapshot>,
     /// Current vertical cursor position within the region.
@@ -168,9 +171,8 @@ impl<'x> Distributor<'x> {
 
     fn handle_frame(&mut self, frame: TermFrame) -> SourceResult<bool> {
         let h = frame.rows();
-        if self.current_y + h > self.regions.size.rows {
+        if self.current_y + h > self.regions.size.rows && !self.pending_frames.is_empty() {
             if self.regions.may_progress() {
-                // Take a sticky snapshot before moving to next region.
                 if self.should_stick() {
                     self.sticky = Some(self.snapshot());
                 }
@@ -179,6 +181,7 @@ impl<'x> Distributor<'x> {
                 self.current_y = TermScalar::ZERO;
             }
         }
+        self.pending_frames.push(frame);
         self.current_y = self.current_y + h;
         Ok(true)
     }
@@ -204,21 +207,27 @@ impl<'x> Distributor<'x> {
     }
 
     fn finish_region(&mut self) -> SourceResult<()> {
-        if self.current_y <= TermScalar::ZERO {
+        if self.pending_frames.is_empty() {
             return Ok(());
         }
 
-        // If we have a sticky snapshot, roll back and keep everything together.
         if let Some(snap) = self.sticky.take() {
             self.current_y = snap.current_y;
         }
 
         self.trim_spacing();
 
-        // Build the frame for this region.
         let width = self.config.width;
-        let frame = TermFrame::new(TermSize::new(width, self.current_y));
-        self.finished.push(frame);
+        let frames = std::mem::take(&mut self.pending_frames);
+        let mut y = TermScalar::ZERO;
+        let total_rows = frames.iter().map(|f| f.rows().max(TermScalar::ONE)).sum::<Row>();
+        let mut result = TermFrame::new(TermSize::new(width, total_rows.max(self.current_y)));
+        for frame in frames {
+            let h = frame.rows().max(TermScalar::ONE);
+            result.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
+            y = y + h + TermScalar::new(1);
+        }
+        self.finished.push(result);
 
         Ok(())
     }

@@ -62,7 +62,7 @@ pub fn finalize(
     }
 
     Ok(TermPage {
-        frame,
+        inner: frame,
         number: 0,
     })
 }

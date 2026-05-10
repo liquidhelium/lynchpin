@@ -169,11 +169,12 @@ const FIGURE_RULE: ShowFn<FigureElem> = |elem, _, _| {
 
 const FIGURE_CAPTION_RULE: ShowFn<FigureCaption> = |elem, engine, styles| {
     let realized = elem.realize(engine, styles)?;
+    let page_width = lynchpin_library_ng::resolve_page_size(styles).cols;
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
         move |_elem, eng, config, st| {
             let region = TermRegion::new(
-                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
+                TermSize::new(page_width, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(
@@ -226,11 +227,12 @@ const FOOTNOTE_RULE: ShowFn<FootnoteElem> = |elem, engine, styles| {
 
 const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
     let (prefix, body) = elem.realize(engine, styles)?;
+    let pw = lynchpin_library_ng::resolve_page_size(styles).cols;
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
         move |_elem, eng, config, st| {
             let region = TermRegion::new(
-                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
+                TermSize::new(pw, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             let prefix_frame = crate::flow::layout_term_frame(
@@ -266,11 +268,12 @@ const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
 
 const REF_RULE: ShowFn<RefElem> = |elem, engine, styles| {
     let realized = elem.realize(engine, styles)?;
+    let pw = lynchpin_library_ng::resolve_page_size(styles).cols;
     Ok(TermBlockElem::new(TermBlockCallback::new(
         elem.clone(),
         move |_elem, eng, config, st| {
             let region = TermRegion::new(
-                TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
+                TermSize::new(pw, TermScalar::INFINITY),
                 typst::layout::Axes::new(false, false),
             );
             crate::flow::layout_term_frame(

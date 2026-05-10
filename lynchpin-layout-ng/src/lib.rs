@@ -1,24 +1,22 @@
-//! Terminal layout engine.
+//! Terminal layout engine — the terminal equivalent of `typst-layout`.
 //!
-//! The terminal equivalent of `lynchpin-layout`.  All modules mirror their
-//! paged counterparts but use terminal types (`TermFrame`, `TermScalar`,
-//! `TermSize`, …) in place of paged types (`Frame`, `Abs`, `Size`, …).
+//! This crate provides the complete layout pipeline for terminal output,
+//! mirroring paged layout's structure file-for-file where possible.
 
-mod flow;
-mod grid;
-mod image;
-mod inline;
-mod lists;
-mod math;
-mod modifiers;
-mod pad;
-mod pages;
-mod repeat;
-mod rules;
-mod shapes;
-mod stack;
-mod transforms;
+pub mod flow;
+pub mod pages;
+pub mod inline;
+pub mod grid;
+pub mod math;
+pub mod image;
+pub mod lists;
+pub mod modifiers;
+pub mod pad;
+pub mod repeat;
+pub mod rules;
+pub mod shapes;
+pub mod stack;
+pub mod transforms;
 
-pub use self::flow::{layout_term_fragment, layout_term_frame};
-pub use self::pages::layout_term_document;
-pub use self::rules::register;
+// Re-export commonly used types.
+pub use pages::{TermDocument, TermPage};

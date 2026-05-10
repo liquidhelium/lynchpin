@@ -1833,6 +1833,8 @@ dependencies = [
  "crossterm",
  "ecow",
  "fontdb",
+ "lynchpin-layout-ng",
+ "lynchpin-library-ng",
  "lynchpin-term-layout",
  "lynchpin-term-realize",
  "rustc-hash",

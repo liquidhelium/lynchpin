@@ -2,6 +2,105 @@ pub mod document;
 
 pub mod term;
 
+pub mod compile_ng {
+    use std::sync::LazyLock;
+    use typst::{
+        ROUTINES, World,
+        diag::{SourceDiagnostic, SourceResult, Warned},
+        ecow::{EcoString, eco_vec},
+        engine::{Engine, Route, Sink, Traced},
+        foundations::{NativeRuleMap, StyleChain, Target, TargetElem},
+        introspection::{Introspector, Locator},
+        routines::Routines,
+        syntax::Span,
+    };
+    use comemo::{Track, Tracked};
+    use lynchpin_library_ng::TermDocument;
+
+    static NG_ROUTINES: LazyLock<Routines> = LazyLock::new(|| {
+        let mut rules = NativeRuleMap::new();
+        lynchpin_layout_ng::rules::register(&mut rules);
+        Routines {
+            rules,
+            eval_string: ROUTINES.eval_string,
+            eval_closure: ROUTINES.eval_closure,
+            realize: ROUTINES.realize,
+            layout_frame: ROUTINES.layout_frame,
+            html_module: ROUTINES.html_module,
+            html_span_filled: ROUTINES.html_span_filled,
+        }
+    });
+
+    pub fn compile(world: &dyn World) -> Warned<SourceResult<TermDocument>> {
+        let mut sink = Sink::new();
+        let output = compile_impl(world.track(), Traced::default().track(), &mut sink);
+        Warned { output, warnings: sink.warnings() }
+    }
+
+    fn compile_impl(
+        world: Tracked<dyn World + '_>,
+        traced: Tracked<Traced>,
+        sink: &mut Sink,
+    ) -> SourceResult<TermDocument> {
+        let library = world.library();
+        let base = StyleChain::new(&library.styles);
+        let target = TargetElem::target.set(Target::Paged).wrap();
+        let styles = base.chain(&target);
+        let empty_introspector = Introspector::default();
+
+        let main = world.main();
+        let main = world.source(main).map_err(|err| {
+            eco_vec![SourceDiagnostic::error(Span::detached(), EcoString::from(err))]
+        })?;
+
+        let content = typst_eval::eval(
+            &ROUTINES, world, traced, sink.track_mut(), Route::default().track(), &main,
+        )?.content();
+
+        let mut introspector = &empty_introspector;
+        let document;
+
+        loop {
+            let mut subsink = Sink::new();
+            let constraint = comemo::Constraint::new();
+            let mut engine = Engine {
+                world,
+                introspector: introspector.track_with(&constraint),
+                traced,
+                sink: subsink.track_mut(),
+                route: Route::default(),
+                routines: &NG_ROUTINES,
+            };
+
+            use typst::routines::{Arenas, RealizationKind};
+            use typst::model::DocumentInfo;
+            let arenas = Arenas::default();
+            let mut locator = Locator::root().split();
+            let mut info = DocumentInfo::default();
+
+            let mut children = (engine.routines.realize)(
+                RealizationKind::LayoutDocument { info: &mut info },
+                &mut engine, &mut locator, &arenas, &content, styles,
+            )?;
+            eprintln!("DEBUG: realized {} children", children.len());
+
+            document = lynchpin_layout_ng::pages::layout_term_document(
+                &mut engine, &mut children, &mut locator, styles,
+            )?;
+            eprintln!("DEBUG: document has {} pages", document.len());
+            for (i, page) in document.iter().enumerate() {
+                eprintln!("DEBUG: page[{}] frame size: {:?}", i, page.inner.size());
+            }
+
+            introspector = &empty_introspector;
+            if constraint.validate(introspector) { break; }
+            break;
+        }
+
+        Ok(document)
+    }
+}
+
 pub mod compile {
     use comemo::{Track, Tracked};
     use rustc_hash::FxHashSet;
