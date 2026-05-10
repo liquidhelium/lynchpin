@@ -12,7 +12,7 @@ use typst::engine::Engine;
 use typst::introspection::Location;
 
 use lynchpin_library_ng::{
-    Row, TermConfig, TermFrame, TermRegion, TermRegions, TermSize,
+    Row, TermConfig, TermFrame, TermFragment, TermRegion, TermRegions, TermSize,
 };
 
 use super::collect::Child;
@@ -28,7 +28,7 @@ pub fn compose(
     config: &Config,
     locator: typst::introspection::Locator<'_>,
     regions: &TermRegions,
-) -> SourceResult<TermFrame> {
+) -> SourceResult<TermFragment> {
     let _ = locator; // kept for API compatibility
 
     let mut composer = Composer {
@@ -53,25 +53,11 @@ struct Composer<'a, 'b, 'x, 'y> {
 }
 
 impl<'a, 'b> Composer<'a, 'b, '_, '_> {
-    fn run(&mut self) -> SourceResult<TermFrame> {
-        // Process all in-flow children.
+    fn run(&mut self) -> SourceResult<TermFragment> {
         let mut items: Vec<super::distribute::Item> = Vec::new();
-
-        // First, handle any queued floats.
         self.handle_floats(&mut items)?;
-
-        // Then process the main child stream.
         self.process_children(&mut items)?;
-
-        // Finalize into a frame.
-        let frames = distribute::distribute(
-            self.engine,
-            items,
-            self.config,
-            &self.regions,
-        )?;
-
-        Ok(frames.into_iter().next().unwrap_or_else(|| TermFrame::new(TermSize::ZERO)))
+        distribute::distribute(self.engine, items, self.config, &self.regions)
     }
 
 

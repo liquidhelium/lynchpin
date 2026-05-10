@@ -145,8 +145,8 @@ pub(crate) fn layout_flow<'a>(
 
     // This loop runs once per region produced by the flow layout.
     loop {
-        let frame = compose(engine, &mut work, &config, locator.next(&()), &regions)?;
-        finished.push(frame);
+        let frames = compose(engine, &mut work, &config, locator.next(&()), &regions)?;
+        finished.extend(frames);
 
         // Terminate the loop when everything is processed.
         if work.done() && (!regions.expand.y || regions.backlog.is_empty()) {
