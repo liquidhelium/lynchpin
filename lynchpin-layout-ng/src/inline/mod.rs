@@ -528,7 +528,6 @@ pub fn layout_inline<'a>(
     region: TermSize,
     _expand: bool,
 ) -> SourceResult<TermFragment> {
-
     let pc = para_config(shared, None);
 
     let mut items: Vec<InlineItem> = Vec::new();
@@ -560,7 +559,7 @@ pub fn layout_par(
 }
 
 /// Layout inline `content` (a paragraph body or any content tree) into a
-/// [`TermFrame`].  Realizes internally.
+/// [`TermFrame`].  Realizes internally, then uses the pair walker.
 pub fn layout_paragraph(
     engine: &mut Engine,
     content: &Content,
@@ -570,10 +569,23 @@ pub fn layout_paragraph(
     situation: Option<ParSituation>,
     max_width: Col,
 ) -> SourceResult<TermFrame> {
-    let pc = para_config(styles, situation);
+    // Realize the content first so show rules (STRONG_RULE, EQUATION_RULE, etc.) apply.
+    use typst::routines::{Arenas, RealizationKind};
+    let mut kind = typst::routines::FragmentKind::Inline;
+    let arenas = Arenas::default();
+    let children = (engine.routines.realize)(
+        RealizationKind::LayoutFragment { kind: &mut kind },
+        engine,
+        &mut typst::introspection::Locator::root().split(),
+        &arenas,
+        content,
+        styles,
+    )?;
 
+    let pc = para_config(styles, situation);
+    let region = TermSize::new(max_width, TermScalar::INFINITY);
     let mut items: Vec<InlineItem> = Vec::new();
-    collect_items(content, styles, base_style, &mut items, engine, config);
+    collect_items_from_pairs(&children, &mut items, engine, region);
 
     let lines = greedy_wrap(items, max_width, &pc);
     Ok(build_paragraph_frame(lines, pc.justify))

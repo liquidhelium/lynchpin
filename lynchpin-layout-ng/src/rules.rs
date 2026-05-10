@@ -809,7 +809,7 @@ const EQUATION_RULE: ShowFn<EquationElem> = |elem, _, styles| {
                     let _ = (&locator, &region);
                     let config = TermConfig::default();
                     Ok(vec![TermInlineItem::Frame(
-                        crate::math::layout_equation_block(elem, engine, &config, styles)?,
+                        crate::math::layout_equation_inline(elem, engine, &config, styles)?,
                     )])
                 },
             )))
