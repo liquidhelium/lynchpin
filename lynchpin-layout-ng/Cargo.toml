@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 lynchpin-library-ng = { path = "../lynchpin-library-ng" }
+lynchpin-term-realize = { path = "../lynchpin-term-realize" }
 typst = { workspace = true }
 typst-library = { workspace = true }
 typst-macros = "0.14"
@@ -35,3 +36,4 @@ icu_provider_adapters = "1.4"
 icu_provider_blob = "1.4"
 icu_segmenter = "1.4"
 memchr = "2"
+tracing = { workspace = true }

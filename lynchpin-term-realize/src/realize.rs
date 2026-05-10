@@ -24,6 +24,7 @@ use typst::foundations::{
 use typst::foundations::{ContextElem, TargetElem};
 use typst::introspection::TagElem;
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
+use lynchpin_library_ng::TermInlineElem;
 use typst::math::{EquationElem, Mathy};
 use typst::model::{
     DocumentInfo, EmphElem, EnumElem, ListElem, ListItemLike, ListLike, ParElem, ParbreakElem,
@@ -43,6 +44,7 @@ use typst::utils::SliceExt;
 pub enum TermRealizationKind {
     Document,
     Math,
+    Inline,
 }
 // ── Public entry ─────────────────────────────────────────────────────────────
 
@@ -677,11 +679,13 @@ const MAX_GROUP_NESTING: usize = 3;
 
 static TERM_DOCUMENT_RULES: &[&GroupingRule] = &[&PAR, &LIST, &ENUM, &TERMS];
 static TERM_MATH_RULES: &[&GroupingRule] = &[&LIST, &ENUM, &TERMS];
+static TERM_INLINE_RULES: &[&GroupingRule] = &[];
 
 fn rules_for(kind: TermRealizationKind) -> &'static [&'static GroupingRule] {
     match kind {
         TermRealizationKind::Document => TERM_DOCUMENT_RULES,
         TermRealizationKind::Math => TERM_MATH_RULES,
+        TermRealizationKind::Inline => TERM_INLINE_RULES,
     }
 }
 
@@ -695,6 +699,7 @@ static PAR: GroupingRule = GroupingRule {
             || e == LinebreakElem::ELEM
             || e == SmartQuoteElem::ELEM
             || e == InlineElem::ELEM
+            || e == TermInlineElem::ELEM
             || e == BoxElem::ELEM
             // Inline styling wrappers: no paged built-in show rules unwrap these,
             // so we include them directly as PAR members.

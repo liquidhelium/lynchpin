@@ -8,6 +8,8 @@ lynchpin-term-realize = { path = "../lynchpin-term-realize" }
 lynchpin-term-layout = { path = "../lynchpin-term-layout" }
 lynchpin-layout-ng = { path = "../lynchpin-layout-ng" }
 lynchpin-library-ng = { path = "../lynchpin-library-ng" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 typst = { workspace = true }
 typst-eval = { workspace = true }
 unicode-width = "0.2"

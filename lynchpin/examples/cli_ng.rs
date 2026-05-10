@@ -1,7 +1,12 @@
 use clap::Parser as _;
 use tinymist_world::{args::CompileOnceArgs, print_diagnostics};
+use tracing_subscriber::EnvFilter;
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug")))
+        .with_writer(std::io::stderr)
+        .init();
     let args = CompileOnceArgs::parse();
     let universe = args.resolve_system().expect("failed to resolve universe");
     let world = universe.snapshot();

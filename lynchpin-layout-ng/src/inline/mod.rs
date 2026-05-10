@@ -139,137 +139,6 @@ fn para_config(styles: StyleChain, situation: Option<ParSituation>) -> ParaConfi
     }
 }
 
-// ── Content-tree walker ───────────────────────────────────────────────────────
-
-fn collect_items(
-    content: &Content,
-    styles: StyleChain,
-    base_style: ContentStyle,
-    items: &mut Vec<InlineItem>,
-    engine: &mut Engine,
-    config: &TermConfig,
-) {
-    if let Some(seq) = content.to_packed::<SequenceElem>() {
-        for child in &seq.children {
-            collect_items(child, styles, base_style, items, engine, config);
-        }
-    } else if let Some(s) = content.to_packed::<StyledElem>() {
-        collect_items(
-            &s.child,
-            styles.chain(&s.styles),
-            base_style,
-            items,
-            engine,
-            config,
-        );
-    } else if let Some(elem) = content.to_packed::<TextElem>() {
-        let text: EcoString = if let Some(case) = styles.get(TextElem::case) {
-            case.apply(&elem.text).into()
-        } else {
-            elem.text.clone()
-        };
-        if text.is_empty() {
-            return;
-        }
-
-        let mut style = base_style;
-        let WeightDelta(delta) = styles.get(TextElem::delta);
-        if delta > 0 {
-            style.attributes.set(Attribute::Bold);
-        }
-        if styles.get(TextElem::emph).0 {
-            style.attributes.set(Attribute::Italic);
-        }
-
-        for deco in styles.get_cloned(TextElem::deco).iter() {
-            match &deco.line {
-                DecoLine::Underline { .. } => {
-                    style.attributes.set(Attribute::Underlined);
-                }
-                DecoLine::Strikethrough { .. } => {
-                    style.attributes.set(Attribute::CrossedOut);
-                }
-                DecoLine::Overline { .. } => {
-                    style.attributes.set(Attribute::OverLined);
-                }
-                DecoLine::Highlight { .. } => {
-                    style.background_color = Some(Color::Yellow);
-                }
-            }
-        }
-
-        let fill = styles.get_cloned(TextElem::fill);
-        if fill != typst::visualize::Color::BLACK.into() {
-            if let Paint::Solid(c) = fill {
-                let r = c.to_linear_rgb();
-                style.foreground_color = Some(Color::Rgb {
-                    r: (r.red * 256.0) as u8,
-                    g: (r.green * 256.0) as u8,
-                    b: (r.blue * 256.0) as u8,
-                });
-            }
-        }
-        items.push(InlineItem::Text(text, style));
-    } else if content.is::<SpaceElem>() {
-        items.push(InlineItem::Space(TermScalar::ONE));
-    } else if content.is::<LinebreakElem>() {
-        items.push(InlineItem::Break);
-    } else if let Some(eq) = content.to_packed::<EquationElem>() {
-        if !eq.block.get(styles) {
-            if let Ok(eq_frame) = crate::math::layout_equation_inline(eq, engine, config, styles) {
-                items.push(InlineItem::Frame(eq_frame));
-            }
-        }
-    } else if let Some(elem) = content.to_packed::<HideElem>() {
-        let mut hidden: Vec<InlineItem> = Vec::new();
-        collect_items(&elem.body, styles, base_style, &mut hidden, engine, config);
-        let width: Col = hidden.iter().map(|i| i.width()).sum();
-        if width > TermScalar::ZERO {
-            items.push(InlineItem::Space(width));
-        }
-    } else if let Some(elem) = content.to_packed::<BoxElem>() {
-        if let Some(body) = elem.body.get_ref(styles) {
-            collect_items(body, styles, base_style, items, engine, config);
-        }
-    } else if let Some(elem) = content.to_packed::<HElem>() {
-        if !elem.amount.is_zero() {
-            items.push(InlineItem::Space(TermScalar::ONE));
-        }
-    } else if let Some(elem) = content.to_packed::<StrongElem>() {
-        let mut s = base_style;
-        s.attributes.set(Attribute::Bold);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<EmphElem>() {
-        let mut s = base_style;
-        s.attributes.set(Attribute::Italic);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<UnderlineElem>() {
-        let mut s = base_style;
-        s.attributes.set(Attribute::Underlined);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<StrikeElem>() {
-        let mut s = base_style;
-        s.attributes.set(Attribute::CrossedOut);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<OverlineElem>() {
-        let mut s = base_style;
-        s.attributes.set(Attribute::OverLined);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<HighlightElem>() {
-        let mut s = base_style;
-        s.background_color = Some(Color::Yellow);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<SubElem>() {
-        let mut s = base_style;
-        s.foreground_color = Some(Color::DarkGrey);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    } else if let Some(elem) = content.to_packed::<SuperElem>() {
-        let mut s = base_style;
-        s.foreground_color = Some(Color::DarkGrey);
-        collect_items(&elem.body, styles, s, items, engine, config);
-    }
-}
-
 // ── Pair → InlineItem conversion ──────────────────────────────────────────────
 
 /// Convert realized [`Pair`]s into [`InlineItem`]s.
@@ -330,6 +199,20 @@ fn collect_items_from_pairs(
             items.push(InlineItem::Space(TermScalar::ONE));
         } else if child.is::<LinebreakElem>() {
             items.push(InlineItem::Break);
+        } else if let Some(elem) = child.to_packed::<ParElem>() {
+            use typst::routines::{Arenas, RealizationKind};
+            let arenas = Arenas::default();
+            let mut kind = typst::routines::FragmentKind::Inline;
+            if let Ok(body_pairs) = (engine.routines.realize)(
+                RealizationKind::LayoutFragment { kind: &mut kind },
+                engine,
+                &mut typst::introspection::Locator::root().split(),
+                &arenas,
+                &elem.body,
+                styles,
+            ) {
+                tracing::debug!("ParElem body: {} pairs", body_pairs.len()); for (bp, _) in &body_pairs { tracing::debug!("  body pair: {}", bp.elem().name()); } collect_items_from_pairs(&body_pairs, items, engine, region);
+            }
         } else if let Some(elem) = child.to_packed::<TermInlineElem>() {
             let loc = typst::introspection::Locator::root();
             let region = TermRegion::new(region, typst::layout::Axes::new(false, false));
@@ -569,17 +452,13 @@ pub fn layout_paragraph(
     situation: Option<ParSituation>,
     max_width: Col,
 ) -> SourceResult<TermFrame> {
-    // Realize the content first so show rules (STRONG_RULE, EQUATION_RULE, etc.) apply.
-    use typst::routines::{Arenas, RealizationKind};
-    let mut kind = typst::routines::FragmentKind::Inline;
+    // Realize with Inline kind — no PAR grouping, show rules still apply.
+    use typst::routines::Arenas;
+    use typst::model::DocumentInfo;
     let arenas = Arenas::default();
-    let children = (engine.routines.realize)(
-        RealizationKind::LayoutFragment { kind: &mut kind },
-        engine,
-        &mut typst::introspection::Locator::root().split(),
-        &arenas,
-        content,
-        styles,
+    let children = lynchpin_term_realize::realize_term(
+        engine, &arenas, &mut DocumentInfo::default(), content, styles,
+        lynchpin_term_realize::TermRealizationKind::Inline,
     )?;
 
     let pc = para_config(styles, situation);

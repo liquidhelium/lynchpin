@@ -787,6 +787,7 @@ const PATH_RULE: ShowFn<PathElem> = |elem, _, _| {
 
 const EQUATION_RULE: ShowFn<EquationElem> = |elem, _, styles| {
     let block = elem.block.get(styles);
+    tracing::debug!("EQUATION_RULE: block={}", block);
     if block {
         Ok(TermBlockElem::new()
             .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(

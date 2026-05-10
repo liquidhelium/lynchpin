@@ -14,3 +14,5 @@ typst = "0.14"
 typst-eval = "0.14"
 typst-library = "0.14"
 tinymist-world = "0.14.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

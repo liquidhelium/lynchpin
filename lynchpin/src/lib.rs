@@ -17,19 +17,44 @@ pub mod compile_ng {
     use comemo::{Track, Tracked};
     use lynchpin_library_ng::TermDocument;
 
+    fn term_realize<'a>(
+        kind: typst::routines::RealizationKind,
+        engine: &mut typst::engine::Engine,
+        _locator: &mut typst::introspection::SplitLocator,
+        arenas: &'a typst::routines::Arenas,
+        content: &'a typst::foundations::Content,
+        styles: typst::foundations::StyleChain<'a>,
+    ) -> typst::diag::SourceResult<Vec<typst::routines::Pair<'a>>> {
+        use lynchpin_term_realize::TermRealizationKind;
+        match kind {
+            typst::routines::RealizationKind::LayoutDocument { .. } => {
+                lynchpin_term_realize::realize_term(
+                    engine, arenas, &mut typst::model::DocumentInfo::default(),
+                    content, styles, TermRealizationKind::Document,
+                )
+            }
+            _ => {
+                lynchpin_term_realize::realize_term(
+                    engine, arenas, &mut typst::model::DocumentInfo::default(),
+                    content, styles, TermRealizationKind::Inline,
+                )
+            }
+        }
+    }
+
     static NG_ROUTINES: LazyLock<Routines> = LazyLock::new(|| {
         let mut rules = NativeRuleMap::new();
         lynchpin_layout_ng::rules::register(&mut rules);
-        Routines {
-            rules,
-            eval_string: ROUTINES.eval_string,
-            eval_closure: ROUTINES.eval_closure,
-            realize: ROUTINES.realize,
-            layout_frame: ROUTINES.layout_frame,
-            html_module: ROUTINES.html_module,
-            html_span_filled: ROUTINES.html_span_filled,
-        }
-    });
+                Routines {
+                    rules,
+                    eval_string: ROUTINES.eval_string,
+                    eval_closure: ROUTINES.eval_closure,
+                    realize: term_realize,
+                    layout_frame: ROUTINES.layout_frame,
+                    html_module: ROUTINES.html_module,
+                    html_span_filled: ROUTINES.html_span_filled,
+                }
+            });
 
     pub fn compile(world: &dyn World) -> Warned<SourceResult<TermDocument>> {
         let mut sink = Sink::new();
@@ -72,16 +97,20 @@ pub mod compile_ng {
                 routines: &NG_ROUTINES,
             };
 
-            use typst::routines::{Arenas, RealizationKind};
+            use typst::routines::Arenas;
             use typst::model::DocumentInfo;
             let arenas = Arenas::default();
             let mut locator = Locator::root().split();
             let mut info = DocumentInfo::default();
 
-            let mut children = (engine.routines.realize)(
-                RealizationKind::LayoutDocument { info: &mut info },
-                &mut engine, &mut locator, &arenas, &content, styles,
+            let mut children = lynchpin_term_realize::realize_term(
+                &mut engine, &arenas, &mut info, &content, styles,
+                lynchpin_term_realize::TermRealizationKind::Document,
             )?;
+            tracing::debug!("realize produced {} children", children.len());
+            for (child, _) in &children {
+                tracing::debug!("  child: {}", child.elem().name());
+            }
 
             document = lynchpin_layout_ng::pages::layout_term_document(
                 &mut engine, &mut children, &mut locator, styles,
