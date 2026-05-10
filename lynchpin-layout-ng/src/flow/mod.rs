@@ -6,7 +6,7 @@
 //! This module orchestrates the pipeline and provides the shared `Work`,
 //! `Config`, and `FlowMode` types.
 
-mod block;
+pub(crate) mod block;
 mod collect;
 mod compose;
 mod distribute;

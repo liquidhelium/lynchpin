@@ -184,6 +184,7 @@ impl<'a> Collector<'a, '_, '_> {
             styles,
             ContentStyle::default(),
             Some(crate::inline::ParSituation::Consecutive),
+            self.base.cols,
         )?;
         let need = frame.rows();
         let align = Axes::new(

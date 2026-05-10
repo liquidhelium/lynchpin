@@ -38,6 +38,7 @@ use typst::foundations::{Content, Packed, Resolve, StyleChain};
 use typst::introspection::SplitLocator;
 use typst::layout::FixedAlignment;
 use typst::layout::AlignElem;
+use typst::layout::BoxElem;
 use typst::model::ParElem;
 use typst::routines::Pair;
 use typst::text::{
@@ -49,6 +50,7 @@ use lynchpin_library_ng::{
     Col, Row, TermConfig, TermFragment, TermFrame, TermInlineElem, TermInlineItem, TermPoint,
     TermRegion, TermScalar, TermSize, text_cols,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 // ── Inline item ───────────────────────────────────────────────────────────────
 
@@ -192,22 +194,36 @@ fn collect_items_from_pairs(
                     });
                 }
             }
-            items.push(InlineItem::Text(text, style));
+
+            // Split text at Unicode word boundaries so greedy_wrap can break
+            // lines.  UAX #29 word boundaries handle Latin (space-separated),
+            // CJK (per-ideograph), and mixed-script text correctly.
+            for (word, is_ws) in text.split_word_bound_indices().map(|(_, w)| {
+                (w, w.chars().all(|c| c.is_whitespace()))
+            }) {
+                if is_ws {
+                    for _ in word.chars() {
+                        items.push(InlineItem::Space(TermScalar::ONE));
+                    }
+                } else {
+                    items.push(InlineItem::Text(EcoString::from(word), style));
+                }
+            }
         } else if child.is::<SpaceElem>() {
             items.push(InlineItem::Space(TermScalar::ONE));
         } else if child.is::<LinebreakElem>() {
             items.push(InlineItem::Break);
         } else if let Some(elem) = child.to_packed::<ParElem>() {
-            use typst::routines::{Arenas, RealizationKind};
+            use typst::routines::Arenas;
+            use typst::model::DocumentInfo;
             let arenas = Arenas::default();
-            let mut kind = typst::routines::FragmentKind::Inline;
-            if let Ok(body_pairs) = (engine.routines.realize)(
-                RealizationKind::LayoutFragment { kind: &mut kind },
+            if let Ok(body_pairs) = lynchpin_term_realize::realize_term(
                 engine,
-                &mut typst::introspection::Locator::root().split(),
                 &arenas,
+                &mut DocumentInfo::default(),
                 &elem.body,
                 styles,
+                lynchpin_term_realize::TermRealizationKind::Inline,
             ) {
                 tracing::debug!("ParElem body: {} pairs", body_pairs.len()); for (bp, _) in &body_pairs { tracing::debug!("  body pair: {}", bp.elem().name()); } collect_items_from_pairs(&body_pairs, items, engine, region);
             }
@@ -225,6 +241,22 @@ fn collect_items_from_pairs(
                         TermInlineItem::Text(t, s) => items.push(InlineItem::Text(t, s)),
                         TermInlineItem::Frame(f) => items.push(InlineItem::Frame(f)),
                     }
+                }
+            }
+        } else if let Some(elem) = child.to_packed::<BoxElem>() {
+            use typst::routines::Arenas;
+            use typst::model::DocumentInfo;
+            let arenas = Arenas::default();
+            if let Some(body) = elem.body.get_ref(styles) {
+                if let Ok(body_pairs) = lynchpin_term_realize::realize_term(
+                    engine,
+                    &arenas,
+                    &mut DocumentInfo::default(),
+                    body,
+                    styles,
+                    lynchpin_term_realize::TermRealizationKind::Inline,
+                ) {
+                    collect_items_from_pairs(&body_pairs, items, engine, region);
                 }
             }
         } else {
@@ -427,6 +459,7 @@ pub fn layout_par(
     styles: StyleChain,
     base_style: ContentStyle,
     situation: Option<ParSituation>,
+    max_width: Col,
 ) -> SourceResult<TermFrame> {
     layout_paragraph(
         engine,
@@ -435,7 +468,7 @@ pub fn layout_par(
         styles,
         base_style,
         situation,
-        TermScalar::new(80),
+        max_width,
     )
 }
 

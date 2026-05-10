@@ -173,7 +173,7 @@ pub fn spacing_to_cols(spacing: &typst::layout::Spacing, styles: StyleChain) -> 
 /// Resolve a `Spacing` value to terminal rows.
 pub fn spacing_to_rows(spacing: &typst::layout::Spacing, styles: StyleChain) -> Row {
     match spacing {
-        typst::layout::Spacing::Rel(rel) => rel_to_cols(rel, styles),
+        typst::layout::Spacing::Rel(rel) => rel_to_rows(rel, styles),
         typst::layout::Spacing::Fr(_) => TermScalar::ONE,
     }
 }

@@ -20,7 +20,6 @@ use typst::introspection::Tag;
 use typst::foundations::Label;
 
 use crate::scalar::TermScalar;
-use tracing::debug;
 
 // ── Public type aliases ──────────────────────────────────────────────────────
 
@@ -515,14 +514,6 @@ impl TermFrame {
 
     /// Render into an existing grid at `offset`.
     pub(crate) fn render_into(&self, grid: &mut TermGrid, offset: TermPoint) {
-        static DEPTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let d = DEPTH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let is_small = self.size.rows < TermScalar::new(10);
-        if is_small {
-            debug!("[{}] render_into: size=({:.1},{:.1}) offset=({:.6},{:.6}) items={}",
-                d, self.size.cols.raw(), self.size.rows.raw(),
-                offset.col.raw(), offset.row.raw(), self.items.len());
-        }
         for (pos, item) in &self.items {
             let p = *pos + offset;
             match item {
@@ -530,17 +521,20 @@ impl TermFrame {
                     grid.put_text(p.col, p.row, t, *style);
                 }
                 TermFrameItem::Frame(f) => {
-                    if is_small {
-                        debug!("[{}]   -> subframe size=({:.1},{:.1}) pos=({:.6},{:.6}) p=({:.6},{:.6})",
-                            d, f.size.cols.raw(), f.size.rows.raw(),
-                            pos.col.raw(), pos.row.raw(), p.col.raw(), p.row.raw());
-                    }
                     f.render_into(grid, p);
                 }
-                _ => {}
+                TermFrameItem::Rule { ch, width, style } => {
+                    grid.put_rule(p.col, p.row, *ch, *width, *style);
+                }
+                TermFrameItem::Shape(shape) => {
+                    grid.put_shape(p.col, p.row, shape);
+                }
+                TermFrameItem::Image(img) => {
+                    grid.put_image(p.col, p.row, img);
+                }
+                TermFrameItem::Tag(_) => {}
             }
         }
-        DEPTH.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -607,16 +601,6 @@ impl TermGrid {
             .unwrap_or_default()
     }
 
-    /// Number of cells in the grid (for debugging).
-    pub fn cell_count(&self) -> usize {
-        self.cells.len()
-    }
-
-    /// Get a cell by linear index (for debugging).
-    pub fn cell_at(&self, i: usize) -> TermCell {
-        self.cells.get(i).copied().unwrap_or_default()
-    }
-
     pub fn set(&mut self, col: Col, row: Row, cell: TermCell) {
         if let Some(i) = self.idx(col, row) {
             self.cells[i] = cell;
@@ -637,7 +621,6 @@ impl TermGrid {
                 continue;
             }
             if col >= TermScalar::ZERO {
-                debug!("put_text: '{}' at ({:?},{:?}) grid_size=({:?},{:?})", ch, col, row, self.cols, self.rows);
                 self.set(col, row, TermCell { ch, style });
             }
             col = col + w;

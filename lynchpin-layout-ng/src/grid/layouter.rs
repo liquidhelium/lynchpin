@@ -13,12 +13,10 @@ use typst_library::foundations::{Resolve, StyleChain};
 use typst_library::introspection::Locator;
 use typst_library::layout::grid::resolve::{Cell, CellGrid, Header, LinePosition, Repeatable};
 use typst_library::layout::resolve::Entry;
-use typst_library::layout::{
-    Axes, Dir, Fr, Length, Rel, Sizing,
-};
-use typst_utils::Numeric;
+use typst_library::layout::{Axes, Dir, Fr, Length, Rel, Sizing};
 use typst_library::text::TextElem;
 use typst_syntax::Span;
+use typst_utils::Numeric;
 
 use lynchpin_library_ng::*;
 
@@ -62,7 +60,6 @@ fn fr_share(fr: Fr, total: Fr, space: TermScalar) -> TermScalar {
 
 /// Resolve a `Rel<Length>` to `TermScalar` against a given base.
 fn resolve_rel(rel: &Rel<Length>, base: TermScalar, styles: StyleChain) -> TermScalar {
-    // Convert base to paged Abs using points (which are 1:1 in raw units).
     let base_abs = typst_library::layout::Abs::pt(base.get() as f64);
     let result_abs: typst_library::layout::Abs = rel.resolve(styles).relative_to(base_abs);
     TermScalar::from_f64(result_abs.to_pt())
@@ -468,14 +465,12 @@ impl<'a> GridLayouter<'a> {
     fn render_fills_strokes(mut self) -> SourceResult<TermFragment> {
         let mut finished = std::mem::take(&mut self.finished);
         let finished_len = finished.len();
-        for ((frame_index, frame), finished_header_rows) in
-            finished.iter_mut().enumerate().zip(
-                self.finished_header_rows
-                    .iter()
-                    .map(Some)
-                    .chain(std::iter::repeat(None)),
-            )
-        {
+        for ((frame_index, frame), finished_header_rows) in finished.iter_mut().enumerate().zip(
+            self.finished_header_rows
+                .iter()
+                .map(Some)
+                .chain(std::iter::repeat(None)),
+        ) {
             let rows = &self.rrows[frame_index.min(self.rrows.len().saturating_sub(1))];
             if self.rcols.is_empty() || rows.is_empty() {
                 continue;
@@ -532,18 +527,14 @@ impl<'a> GridLayouter<'a> {
                     if length > TermScalar::ZERO {
                         let ch = '│';
                         let style = crossterm::style::ContentStyle::default();
-                        frame.vline(
-                            TermPoint::new(dx, dy),
-                            length,
-                            ch,
-                            style,
-                        );
+                        frame.vline(TermPoint::new(dx, dy), length, ch, style);
                     }
                 }
             }
 
             // Render horizontal lines.
-            let hline_offsets: Vec<TermScalar> = points(rows.iter().map(|piece| piece.height)).collect();
+            let hline_offsets: Vec<TermScalar> =
+                points(rows.iter().map(|piece| piece.height)).collect();
             let hline_indices = rows
                 .iter()
                 .map(|piece| piece.y)
@@ -551,18 +542,14 @@ impl<'a> GridLayouter<'a> {
                 .enumerate();
 
             let in_last_region = frame_index + 1 == finished_len;
-            let last_repeated_header_end = finished_header_rows
-                .map(|info| info.last_repeated_header_end);
+            let last_repeated_header_end =
+                finished_header_rows.map(|info| info.last_repeated_header_end);
 
             for (i, (hline_index, _)) in hline_indices.clone().enumerate() {
                 let dy = *hline_offsets.get(i).unwrap_or(&TermScalar::ZERO);
 
                 // Determine the local top y for this hline.
-                let local_top_y = if i == 0 {
-                    None
-                } else {
-                    Some(rows[i - 1].y)
-                };
+                let local_top_y = if i == 0 { None } else { Some(rows[i - 1].y) };
 
                 let hlines_at_row = self
                     .grid
@@ -625,12 +612,7 @@ impl<'a> GridLayouter<'a> {
                     if length > TermScalar::ZERO {
                         let ch = '─';
                         let style = crossterm::style::ContentStyle::default();
-                        frame.hline(
-                            TermPoint::new(dx, dy),
-                            length,
-                            ch,
-                            style,
-                        );
+                        frame.hline(TermPoint::new(dx, dy), length, ch, style);
                     }
                     let _ = seg_idx;
                     col_offset = col_offset.max(dx + length);
@@ -749,22 +731,14 @@ impl<'a> GridLayouter<'a> {
 
                 let width = self.cell_spanned_width(cell, parent.x);
                 let size = TermSize::new(width, TermScalar::INFINITY);
-                let pod: TermRegions =
-                    TermRegion::new(size, Axes::splat(false)).into();
+                let pod: TermRegions = TermRegion::new(size, Axes::splat(false)).into();
 
                 let locator = self.cell_locator(parent, 0);
-                let frames = layout_cell(
-                    cell,
-                    engine,
-                    locator,
-                    self.styles,
-                    pod,
-                    false,
-                )?
-                .into_iter()
-                .map(|frame| frame.width())
-                .max()
-                .unwrap_or(TermScalar::ZERO);
+                let frames = layout_cell(cell, engine, locator, self.styles, pod, false)?
+                    .into_iter()
+                    .map(|frame| frame.width())
+                    .max()
+                    .unwrap_or(TermScalar::ZERO);
 
                 resolved.set_max(frames);
             }
@@ -975,8 +949,7 @@ impl<'a> GridLayouter<'a> {
                 // Force cell to fit into a single region when the row is
                 // unbreakable, even when it is a breakable rowspan, as a best
                 // effort.
-                let mut pod: TermRegions =
-                    TermRegion::new(size, self.regions.expand).into();
+                let mut pod: TermRegions = TermRegion::new(size, self.regions.expand).into();
                 pod.full = measurement_data.full;
 
                 if measurement_data.frames_in_previous_regions > 0 {
@@ -1143,8 +1116,7 @@ impl<'a> GridLayouter<'a> {
                 if cell.rowspan.get() == 1 {
                     let width = self.cell_spanned_width(cell, x);
                     let size = TermSize::new(width, height);
-                    let mut pod: TermRegions =
-                        TermRegion::new(size, Axes::splat(true)).into();
+                    let mut pod: TermRegions = TermRegion::new(size, Axes::splat(true)).into();
                     if self.grid.rows[y] == Sizing::Auto && self.unbreakable_rows_left == 0 {
                         // Cells at breakable auto rows have lengths relative
                         // to the entire page, unlike cells in unbreakable auto
@@ -1162,9 +1134,7 @@ impl<'a> GridLayouter<'a> {
                     )?
                     .into_iter()
                     .next()
-                    .unwrap_or_else(|| {
-                        TermFrame::soft(TermSize::new(width, height))
-                    });
+                    .unwrap_or_else(|| TermFrame::soft(TermSize::new(width, height)));
                     let mut pos = offset;
                     if self.is_rtl {
                         // In RTL cells expand to the left, thus the position
@@ -1197,8 +1167,7 @@ impl<'a> GridLayouter<'a> {
 
         // Prepare regions.
         let size = TermSize::new(self.width, heights[0]);
-        let mut pod: TermRegions =
-            TermRegion::new(size, Axes::splat(true)).into();
+        let mut pod: TermRegions = TermRegion::new(size, Axes::splat(true)).into();
         pod.full = self.regions.full;
         pod.backlog = heights[1..].to_vec();
 
@@ -1289,10 +1258,9 @@ impl<'a> GridLayouter<'a> {
         // If no rows other than the footer have been laid out so far
         // (e.g. due to header orphan prevention), and there are rows
         // beside the footer, then don't lay it out at all.
-        let footer_would_be_widow =
-            matches!(&self.grid.footer, Some(footer) if footer.repeated)
-                && self.current.lrows.is_empty()
-                && self.current.could_progress_at_top;
+        let footer_would_be_widow = matches!(&self.grid.footer, Some(footer) if footer.repeated)
+            && self.current.lrows.is_empty()
+            && self.current.could_progress_at_top;
 
         let mut laid_out_footer_start = None;
         if !footer_would_be_widow && let Some(footer) = &self.grid.footer {
@@ -1381,9 +1349,10 @@ impl<'a> GridLayouter<'a> {
 
                 // Ensure the vector of heights is long enough such that the
                 // last height is the one for the current region.
-                rowspan
-                    .heights
-                    .extend(std::iter::repeat_n(TermScalar::ZERO, amount_missing_heights));
+                rowspan.heights.extend(std::iter::repeat_n(
+                    TermScalar::ZERO,
+                    amount_missing_heights,
+                ));
 
                 // Ensure that, in this region, the rowspan will span at least
                 // this row.

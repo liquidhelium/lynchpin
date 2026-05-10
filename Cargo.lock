@@ -1912,7 +1912,6 @@ dependencies = [
  "comemo",
  "crossterm",
  "ecow",
- "tracing",
  "typst",
  "typst-library",
  "typst-macros",

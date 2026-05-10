@@ -34,9 +34,13 @@ pub mod compile_ng {
                 )
             }
             _ => {
+                // Use Document mode for fragment realizations so that inline
+                // content (TextElem, etc.) gets grouped into ParElem by the PAR
+                // grouping rule. The flow collector expects ParElem, not raw
+                // inline elements, and skips raw inline elements.
                 lynchpin_term_realize::realize_term(
                     engine, arenas, &mut typst::model::DocumentInfo::default(),
-                    content, styles, TermRealizationKind::Inline,
+                    content, styles, TermRealizationKind::Document,
                 )
             }
         }

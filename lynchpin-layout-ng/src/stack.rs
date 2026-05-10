@@ -73,7 +73,7 @@ pub fn layout_stack(
         }
     }
 
-    Ok(layouter.finish())
+    layouter.finish()
 }
 
 /// Performs stack layout.
@@ -172,7 +172,7 @@ impl<'a> StackLayouter<'a> {
         styles: StyleChain,
     ) -> SourceResult<()> {
         if self.regions.is_full() {
-            self.finish_region()?;
+            let _ = self.finish_region()?;
         }
 
         // Block-axis alignment of the `AlignElem` is respected by stacks.
@@ -210,8 +210,8 @@ impl<'a> StackLayouter<'a> {
         Ok(())
     }
 
-    /// Advance to the next region.
-    fn finish_region(&mut self) -> SourceResult<()> {
+    /// Advance to the next region, returning the finished frame.
+    fn finish_region(&mut self) -> SourceResult<TermFrame> {
         // Determine the size of the stack in this region depending on whether
         // the region expands.
         let initial_axes = Axes::new(self.initial.cols, self.initial.rows);
@@ -306,84 +306,12 @@ impl<'a> StackLayouter<'a> {
         // would be additional frames but we only support single-region
         // for now.
 
-        // Instead of collecting finished frames, just return the output
-        // as the result from finish().
-        // (For single-region layout, this is fine.)
-        let _ = output;
-        Ok(())
+        Ok(output)
     }
 
     /// Finish layouting and return the resulting frame.
-    fn finish(mut self) -> TermFrame {
-        let _ = self.finish_region();
-
-        // Build the frame from all items.
-        let actual_main = match self.axis {
-            Axis::X => self.used.into_axes(self.axis).x.max(TermScalar::ONE),
-            Axis::Y => self.used.into_axes(self.axis).y.max(TermScalar::ONE),
-        };
-        let cross = self.used.cross.max(TermScalar::ONE);
-
-        let size = match self.axis {
-            Axis::X => TermSize::new(actual_main, cross),
-            Axis::Y => TermSize::new(cross, actual_main),
-        };
-
-        let mut output = TermFrame::new(size);
-        let mut cursor: Row = TermScalar::ZERO;
-
-        // Expand fully if there are fr spacings.
-        let full = match self.axis {
-            Axis::X => size.cols,
-            Axis::Y => size.rows,
-        };
-        let remaining = full - self.used.main;
-        let fr_total = self.fr;
-
-        for item in std::mem::take(&mut self.items) {
-            match item {
-                StackItem::Absolute(v) => cursor += v,
-                StackItem::Fractional(v) => {
-                    if fr_total != Fr::zero() {
-                        let share = remaining.get() as f64
-                            * (v.get() as f64 / fr_total.get() as f64);
-                        cursor += TermScalar::from_f64(share.round());
-                    }
-                }
-                StackItem::Frame(frame, align) => {
-                    let child = match self.axis {
-                        Axis::X => frame.size().cols,
-                        Axis::Y => frame.size().rows,
-                    };
-
-                    let main = if self.dir.is_positive() {
-                        cursor
-                    } else {
-                        self.used.main - child - cursor
-                    };
-
-                    let cross_axis = self.axis.other();
-                    let cross_abs = align
-                        .get(cross_axis)
-                        .position(typst::layout::Abs::raw(
-                            (match cross_axis {
-                                Axis::X => size.cols,
-                                Axis::Y => size.rows,
-                            } - match cross_axis {
-                                Axis::X => frame.size().cols,
-                                Axis::Y => frame.size().rows,
-                            }).get() as f64,
-                        ));
-                    let cross = TermScalar::from_f64(cross_abs.to_raw());
-
-                    let pos = GenericSize::new(cross, main).to_point(self.axis);
-                    cursor += child;
-                    output.push_frame(pos, frame);
-                }
-            }
-        }
-
-        output
+    fn finish(mut self) -> SourceResult<TermFrame> {
+        self.finish_region()
     }
 }
 

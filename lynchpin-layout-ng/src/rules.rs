@@ -10,8 +10,8 @@
 use comemo::Track;
 use typst::foundations::{Content, NativeElement, NativeRuleMap, ShowFn};
 use typst::layout::{
-    AlignElem, ColumnsElem, GridCell, GridElem, HideElem, LayoutElem, MoveElem, PadElem,
-    RepeatElem, RotateElem, ScaleElem, SkewElem, StackElem,
+    AlignElem, BlockBody, BlockElem, ColumnsElem, GridCell, GridElem, HideElem, LayoutElem,
+    MoveElem, PadElem, RepeatElem, RotateElem, ScaleElem, SkewElem, StackElem,
 };
 use typst::math::EquationElem;
 use typst::model::{EmphElem, StrongElem};
@@ -80,6 +80,7 @@ pub fn register(rules: &mut NativeRuleMap) {
     rules.register(Target::Paged, REPEAT_RULE);
     rules.register(Target::Paged, HIDE_RULE);
     rules.register(Target::Paged, LAYOUT_RULE);
+    rules.register(Target::Paged, BLOCK_RULE);
 
     // ── Visualize ────────────────────────────────────────────────────────
     rules.register(Target::Paged, IMAGE_RULE);
@@ -649,6 +650,59 @@ const LAYOUT_RULE: ShowFn<LayoutElem> = |elem, _, _| {
                     )?
                     .display();
                 crate::flow::layout_term_frame(engine, &result, locator, styles, region)
+            },
+        ))))
+        .pack()
+        .spanned(elem.span()))
+};
+
+const BLOCK_RULE: ShowFn<BlockElem> = |elem, _, _| {
+    Ok(TermBlockElem::new()
+        .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
+            elem.clone(),
+            |elem, engine, locator, styles, region| {
+                // Resolve width to Option<TermScalar> (cols).
+                let resolved_width: Option<TermScalar> = match elem.width.get(styles) {
+                    typst::foundations::Smart::Auto => None,
+                    typst::foundations::Smart::Custom(rel) => {
+                        Some(lynchpin_library_ng::units::rel_to_cols(&rel, styles))
+                    }
+                };
+
+                // Resolve height to Option<TermScalar> (rows).
+                let resolved_height: Option<TermScalar> = match elem.height.get(styles) {
+                    typst::layout::Sizing::Auto => None,
+                    typst::layout::Sizing::Rel(rel) => {
+                        Some(lynchpin_library_ng::units::rel_to_rows(&rel, styles))
+                    }
+                    // Fractional height is handled by the flow distributor,
+                    // skip pod-level sizing for now.
+                    typst::layout::Sizing::Fr(_) => None,
+                };
+
+                // Build a constrained pod region if width/height were specified.
+                let pod = crate::flow::block::unbreakable_pod(
+                    resolved_width,
+                    resolved_height,
+                    region.size,
+                );
+
+                // Layout the body content.
+                match elem.body.get_ref(styles) {
+                    None => Ok(TermFrame::new(TermSize::ZERO)),
+                    Some(BlockBody::Content(body)) => {
+                        crate::flow::layout_term_frame(
+                            engine, body, locator.relayout(), styles, pod,
+                        )
+                    }
+                    // Callback-based bodies (SingleLayouter / MultiLayouter) are
+                    // uncommon in practice — those elements (headings, lists, etc.)
+                    // are intercepted by their own dedicated show rules above.
+                    Some(BlockBody::SingleLayouter(_))
+                    | Some(BlockBody::MultiLayouter(_)) => {
+                        Ok(TermFrame::new(TermSize::ZERO))
+                    }
+                }
             },
         ))))
         .pack()

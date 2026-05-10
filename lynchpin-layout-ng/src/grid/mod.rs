@@ -84,7 +84,16 @@ pub fn layout_cell(
 
     let locator = locator.next(&cell.body.span());
 
-    let fragment = crate::flow::layout_term_fragment(engine, &cell.body, locator, styles, regions)?;
+    // Unwrap GridCell / TableCell to get the inner body content.
+    let layout_body: &Content = if let Some(grid_cell) = cell.body.to_packed::<GridCell>() {
+        &grid_cell.body
+    } else if let Some(table_cell) = cell.body.to_packed::<TableCell>() {
+        &table_cell.body
+    } else {
+        &cell.body
+    };
+
+    let fragment = crate::flow::layout_term_fragment(engine, layout_body, locator, styles, regions)?;
 
 
     // Manually insert tags.
