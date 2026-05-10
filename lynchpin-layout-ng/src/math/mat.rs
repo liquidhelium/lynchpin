@@ -133,7 +133,7 @@ pub fn layout_mat(
         row_heights.iter().copied().sum::<Row>() + row_gap * (num_rows.saturating_sub(1) as f64);
 
     // Baseline at the vertical centre of the matrix.
-    let baseline: Row = (total_rows / Col::new(2)).max(Row::ZERO);
+    let baseline: Row = Row::new(total_rows.get() / 2).max(Row::ZERO);
 
     let mut body = TermFrame::new(TermSize::new(total_cols.max(Col::new(1)), total_rows.max(Row::new(1))));
     body.set_baseline(baseline);
@@ -145,8 +145,8 @@ pub fn layout_mat(
         for (ci, cell) in row.into_iter().enumerate() {
             let col_width = col_widths[ci];
             // Centre cell within its column / row slot.
-            let cx = x + ((col_width - cell.cols()) / Col::new(2)).max(Col::ZERO);
-            let cy = y + ((row_height - cell.rows()) / Col::new(2)).max(Row::ZERO);
+            let cx = x + Col::new((col_width - cell.cols()).get() / 2).max(Col::ZERO);
+            let cy = y + Row::new((row_height - cell.rows()).get() / 2).max(Row::ZERO);
             body.push_frame(TermPoint::new(cx, cy), cell);
             x = x + col_width + col_gap;
         }
@@ -194,7 +194,7 @@ pub fn layout_cases(
     }
 
     let mut body = compose_vertical(frames, Row::ZERO, 0);
-    body.set_baseline(body.rows() / Col::new(2));
+    body.set_baseline(Row::new(body.rows().get() / 2));
 
     let (open, close) = cases_delimiters(delim.open(), reverse);
     ctx.push(wrap_with_delimiters(ctx, body, open, close));

@@ -167,7 +167,7 @@ fn layout_limits_mode(
 
     if let Some(af) = above_frame {
         let ac = af.cols();
-        let pad = (limit_width - ac).max(Col::ZERO) / Col::new(2);
+        let pad = Col::new((limit_width - ac).get().max(0) / 2);
         frames.push(if pad > Col::ZERO {
             pad_h(af, pad, limit_width - ac - pad)
         } else {
@@ -176,7 +176,7 @@ fn layout_limits_mode(
         baseline_idx = 1;
     }
     let bc = base_frame.cols();
-    let pad = (limit_width - bc).max(Col::ZERO) / Col::new(2);
+    let pad = Col::new((limit_width - bc).get().max(0) / 2);
     frames.push(if pad > Col::ZERO {
         pad_h(base_frame, pad, limit_width - bc - pad)
     } else {
@@ -184,7 +184,7 @@ fn layout_limits_mode(
     });
     if let Some(bf) = below_frame {
         let bfc = bf.cols();
-        let pad = (limit_width - bfc).max(Col::ZERO) / Col::new(2);
+        let pad = Col::new((limit_width - bfc).get().max(0) / 2);
         frames.push(if pad > Col::ZERO {
             pad_h(bf, pad, limit_width - bfc - pad)
         } else {

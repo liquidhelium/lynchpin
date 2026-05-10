@@ -256,7 +256,7 @@ impl TermMathRun {
             + row_gap * (row_count.saturating_sub(1) as f64);
 
         let mut out = TermFrame::new(TermSize::new(total_cols, total_rows));
-        out.set_baseline(total_rows / Col::new(2));
+        out.set_baseline(Row::new(total_rows.get() / 2));
 
         let mut y: Row = Row::ZERO;
         for (i, row_frame) in row_frames.into_iter().enumerate() {

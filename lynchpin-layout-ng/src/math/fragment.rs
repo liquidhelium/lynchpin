@@ -346,7 +346,7 @@ impl From<unicode_math_class::MathClass> for MathClass {
 impl TermMathFrameFragment {
     /// Build a fragment from `frame` with sensible defaults.
     pub fn new(frame: TermFrame) -> Self {
-        let attach = (frame.cols() / Col::ONE / Col::new(2)).max(Col::ZERO);
+        let attach = Col::new(frame.cols().get() / 2).max(Col::ZERO);
         Self {
             frame,
             class: MathClass::Normal,

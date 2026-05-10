@@ -49,8 +49,8 @@ pub fn layout_accent(
 
     // Horizontal position: centre the accent over the base's accent-attach point.
     // accent_attach is the column midpoint of the base.
-    let attach_col = (base_cols / Col::new(2)).max(Col::ZERO);
-    let accent_x = (attach_col - accent_cols / Col::new(2)).max(Col::ZERO);
+    let attach_col = Col::new(base_cols.get() / 2).max(Col::ZERO);
+    let accent_x = (attach_col - Col::new(accent_cols.get() / 2)).max(Col::ZERO);
 
     let total_cols = base_cols.max(accent_cols);
 

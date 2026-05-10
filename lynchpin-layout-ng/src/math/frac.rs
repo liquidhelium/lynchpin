@@ -108,7 +108,7 @@ fn build_vertical_frac(
     frame.set_baseline(baseline);
 
     // Place numerator (centered).
-    let num_x = Col::new(1) + (inner_cols - num_cols) / Col::new(2);
+    let num_x = Col::new(1) + Col::new((inner_cols - num_cols).get() / 2);
     frame.push_frame(TermPoint::new(num_x, Row::ZERO), num);
 
     // Draw fraction bar (or nothing for binom).
@@ -123,7 +123,7 @@ fn build_vertical_frac(
     }
 
     // Place denominator (centered).
-    let denom_x = Col::new(1) + (inner_cols - denom_cols) / Col::new(2);
+    let denom_x = Col::new(1) + Col::new((inner_cols - denom_cols).get() / 2);
     frame.push_frame(TermPoint::new(denom_x, num_rows + bar_rows), denom);
 
     if binom {

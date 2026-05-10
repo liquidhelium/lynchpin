@@ -53,7 +53,7 @@ pub fn layout_cancel(
     // For `cross: true`, add a second rule.  We pick the row that is
     // symmetric with the baseline relative to the vertical midpoint.
     if cross {
-        let mid = body_rows / Col::new(2);
+        let mid = Row::new(body_rows.get() / 2);
         let mirror_row = ((Col::new(2) * mid) - body_baseline).clamp(Row::ZERO, body_rows - Row::new(1));
         if mirror_row != body_baseline {
             frame.hline(
