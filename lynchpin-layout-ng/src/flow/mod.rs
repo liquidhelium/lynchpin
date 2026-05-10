@@ -74,6 +74,10 @@ pub fn layout_term_fragment_from_content(
         content,
         styles,
     )?;
+    eprintln!("DEBUG layout_term_fragment_from_content: {} children", children.len());
+    for (i, (child, _)) in children.iter().enumerate() {
+        eprintln!("DEBUG   child[{}]: {}", i, child.elem().name());
+    }
     layout_flow(
         engine,
         &children,

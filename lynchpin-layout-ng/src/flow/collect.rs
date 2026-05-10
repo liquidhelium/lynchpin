@@ -20,8 +20,11 @@ use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawElem, RawLine, TextElem};
 
 use lynchpin_library_ng::{
-    Row, TermBlockElem, TermConfig, TermFrame, TermRegion, TermScalar, TermSize,
+    Row, TermBlockBody, TermBlockElem, TermConfig, TermFrame, TermRegion, TermRegions,
+    TermScalar, TermSize,
 };
+
+use super::block::{layout_single_block, layout_multi_block};
 
 // ── Collector entry point ────────────────────────────────────────────────────
 
@@ -371,7 +374,7 @@ impl SingleChild<'_> {
         engine: &mut Engine,
         region: TermRegion,
     ) -> SourceResult<TermFrame> {
-        self.elem.cb.call(engine, self.locator.relayout(), self.styles, region)
+        layout_single_block(self.elem, engine, self.locator.relayout(), self.styles, region)
     }
 }
 
@@ -404,7 +407,9 @@ impl MultiChild<'_> {
         engine: &mut Engine,
         region: TermRegion,
     ) -> SourceResult<TermFrame> {
-        self.elem.cb.call(engine, self.locator.relayout(), self.styles, region)
+        let regions = TermRegions::from(region);
+        let fragment = layout_multi_block(self.elem, engine, self.locator.relayout(), self.styles, regions)?;
+        Ok(fragment.into_iter().next().unwrap_or(TermFrame::new(TermSize::ZERO)))
     }
 }
 
@@ -469,14 +474,10 @@ impl PlacedChild<'_> {
         engine: &mut Engine,
         config: &TermConfig,
     ) -> SourceResult<TermFrame> {
-        // Delegate to the block layout helper.
-        // In terminal, placed elements are laid out via the block callback.
-        use super::super::flow::block::layout_single_block;
-        let region = lynchpin_library_ng::TermRegion::new(
-            TermSize::new(lynchpin_library_ng::resolve_page_size(self.styles).cols, lynchpin_library_ng::resolve_page_size(self.styles).rows),
-            Axes::splat(true),
-        );
-        layout_single_block(engine, &[], self.styles, region)
+        // TODO: PlacedChild should store a TermBlockElem and dispatch through
+        // layout_single_block properly.
+        let _ = (engine, config);
+        Ok(TermFrame::new(TermSize::ZERO))
     }
 
     /// The location of this placed child.

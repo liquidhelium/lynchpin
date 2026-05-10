@@ -8,11 +8,13 @@
 
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::StyleChain;
+use typst::foundations::{Packed, Resolve, StyleChain};
+use typst::introspection::Locator;
 use typst::layout::Axes;
 
 use lynchpin_library_ng::{
-    TermFrame, TermRegion, TermScalar, TermSize,
+    TermBlockBody, TermBlockElem, TermFrame, TermFragment, TermRegion, TermRegions,
+    TermScalar, TermSize,
 };
 
 // ── Pod construction ─────────────────────────────────────────────────────────
@@ -44,34 +46,59 @@ pub fn unbreakable_pod(
 
 /// Lay out a single unbreakable block element.
 ///
-/// Terminal version delegates to the element's callback directly.
+/// Mirrors paged `layout_single_block`: dispatches on [`TermBlockBody`].
 pub fn layout_single_block(
-    engine: &mut Engine,
-    body: &[typst::routines::Pair<'_>],
+    elem: &Packed<TermBlockElem>,
+    engine: &mut Engine<'_>,
+    locator: Locator<'_>,
     styles: StyleChain<'_>,
     region: TermRegion,
 ) -> SourceResult<TermFrame> {
-    // In terminal layout, block content is already realized and collected.
-    // The actual layout is performed by the flow → distribute pipeline.
-    let _ = (engine, body, styles);
-    Ok(TermFrame::new(region.size))
+    let body = elem.body.get_ref(styles);
+    match body {
+        None => Ok(TermFrame::new(TermSize::ZERO)),
+        Some(TermBlockBody::Content(content)) => {
+            crate::flow::layout_term_frame_from_content(engine, content, locator, styles, region)
+        }
+        Some(TermBlockBody::SingleLayouter(cb)) => {
+            cb.call(engine, locator, styles, region)
+        }
+        Some(TermBlockBody::MultiLayouter(cb)) => {
+            // Multi in single region context: take first region only.
+            let fragment = cb.call(engine, locator, styles, region.into())?;
+            Ok(fragment.into_iter().next().unwrap_or(TermFrame::new(TermSize::ZERO)))
+        }
+    }
 }
 
 // ── Multi block layout ───────────────────────────────────────────────────────
 
 /// Lay out a breakable block element.
 ///
-/// Terminal version: breakable blocks produce a single frame that
-/// may be split by the distributor if it doesn't fit in a region.
+/// Mirrors paged `layout_multi_block`: dispatches on [`TermBlockBody`].
 pub fn layout_multi_block(
-    engine: &mut Engine,
-    body: &[typst::routines::Pair<'_>],
+    elem: &Packed<TermBlockElem>,
+    engine: &mut Engine<'_>,
+    locator: Locator<'_>,
     styles: StyleChain<'_>,
-    regions: &lynchpin_library_ng::TermRegions,
-) -> SourceResult<Vec<TermFrame>> {
-    // Delegate to the flow pipeline for the body content.
-    let _ = (engine, body, styles, regions);
-    Ok(vec![TermFrame::new(TermSize::ZERO)])
+    regions: TermRegions,
+) -> SourceResult<TermFragment> {
+    let body = elem.body.get_ref(styles);
+    match body {
+        None => Ok(vec![TermFrame::new(TermSize::ZERO)]),
+        Some(TermBlockBody::Content(content)) => {
+            crate::flow::layout_term_fragment_from_content(engine, content, locator, styles, regions)
+        }
+        Some(TermBlockBody::SingleLayouter(cb)) => {
+            // Single in multi region context: take base region only.
+            let region = TermRegion::new(regions.base(), regions.expand);
+            cb.call(engine, locator, styles, region)
+                .map(|f| vec![f])
+        }
+        Some(TermBlockBody::MultiLayouter(cb)) => {
+            cb.call(engine, locator, styles, regions)
+        }
+    }
 }
 
 // ── Distribute fixed height across regions ───────────────────────────────────
