@@ -19,9 +19,10 @@ use typst::model::{
     QuoteElem, RefElem, TableCell, TableElem, TermsElem,
 };
 use typst::text::{
-    HighlightElem, OverlineElem, RawElem, RawLine, SmallcapsElem, StrikeElem, SubElem, SuperElem,
-    UnderlineElem,
+    HighlightElem, ItalicToggle, OverlineElem, RawElem, RawLine, SmallcapsElem, StrikeElem,
+    SubElem, SuperElem, TextElem, UnderlineElem, WeightDelta,
 };
+use typst::model::{EmphElem, StrongElem};
 use typst::visualize::{
     CircleElem, CurveElem, EllipseElem, ImageElem, LineElem, PathElem, PolygonElem, RectElem,
     SquareElem,
@@ -51,6 +52,8 @@ pub fn register(rules: &mut NativeRuleMap) {
     rules.register(Target::Paged, TABLE_CELL_RULE);
 
     // ── Text ─────────────────────────────────────────────────────────────
+    rules.register(Target::Paged, STRONG_RULE);
+    rules.register(Target::Paged, EMPH_RULE);
     rules.register(Target::Paged, SUB_RULE);
     rules.register(Target::Paged, SUPER_RULE);
     rules.register(Target::Paged, UNDERLINE_RULE);
@@ -90,6 +93,18 @@ pub fn register(rules: &mut NativeRuleMap) {
     // ── Math ─────────────────────────────────────────────────────────────
     rules.register(Target::Paged, EQUATION_RULE);
 }
+
+// ── Inline text rules (mirror paged) ────────────────────────────────────────
+
+const STRONG_RULE: ShowFn<StrongElem> = |elem, _, styles| {
+    Ok(elem
+        .body
+        .clone()
+        .set(TextElem::delta, WeightDelta(elem.delta.get(styles))))
+};
+
+const EMPH_RULE: ShowFn<EmphElem> =
+    |elem, _, _| Ok(elem.body.clone().set(TextElem::emph, ItalicToggle(true)));
 
 // ── Model rules ──────────────────────────────────────────────────────────────
 
@@ -331,58 +346,94 @@ const TABLE_CELL_RULE: ShowFn<TableCell> = |elem, _, _| {
 
 // ── Text rules ───────────────────────────────────────────────────────────────
 
-const SUB_RULE: ShowFn<SubElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| crate::modifiers::layout_sub(elem, engine, config, styles),
+const SUB_RULE: ShowFn<SubElem> = |elem, _, styles| {
+    use typst::text::{ShiftSettings, ScriptKind, TextSize};
+    use typst::layout::{Em, Length};
+    let font_size = styles.resolve(TextElem::size);
+    Ok(elem.body.clone().set(
+        TextElem::shift_settings,
+        Some(ShiftSettings {
+            typographic: elem.typographic.get(styles),
+            shift: elem.baseline.get(styles).map(|l| -Em::from_length(l, font_size)),
+            size: elem.size.get(styles).map(|t| Em::from_length(t.0, font_size)),
+            kind: ScriptKind::Sub,
+        }),
     ))
-    .pack()
-    .spanned(elem.span()))
 };
 
-const SUPER_RULE: ShowFn<SuperElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| crate::modifiers::layout_super(elem, engine, config, styles),
+const SUPER_RULE: ShowFn<SuperElem> = |elem, _, styles| {
+    use typst::text::{ShiftSettings, ScriptKind, TextSize};
+    use typst::layout::{Em, Length};
+    let font_size = styles.resolve(TextElem::size);
+    Ok(elem.body.clone().set(
+        TextElem::shift_settings,
+        Some(ShiftSettings {
+            typographic: elem.typographic.get(styles),
+            shift: elem.baseline.get(styles).map(|l| -Em::from_length(l, font_size)),
+            size: elem.size.get(styles).map(|t| Em::from_length(t.0, font_size)),
+            kind: ScriptKind::Super,
+        }),
     ))
-    .pack()
-    .spanned(elem.span()))
 };
 
-const UNDERLINE_RULE: ShowFn<UnderlineElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| crate::modifiers::layout_underline(elem, engine, config, styles),
+const UNDERLINE_RULE: ShowFn<UnderlineElem> = |elem, _, styles| {
+    Ok(elem.body.clone().set(
+        TextElem::deco,
+        smallvec::smallvec![typst::text::Decoration {
+            line: typst::text::DecoLine::Underline {
+                stroke: Default::default(),
+                offset: elem.offset.resolve(styles),
+                evade: elem.evade.get(styles),
+                background: elem.background.get(styles),
+            },
+            extent: elem.extent.resolve(styles),
+        }],
     ))
-    .pack()
-    .spanned(elem.span()))
 };
 
-const OVERLINE_RULE: ShowFn<OverlineElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| crate::modifiers::layout_overline(elem, engine, config, styles),
+const OVERLINE_RULE: ShowFn<OverlineElem> = |elem, _, styles| {
+    Ok(elem.body.clone().set(
+        TextElem::deco,
+        smallvec::smallvec![typst::text::Decoration {
+            line: typst::text::DecoLine::Overline {
+                stroke: Default::default(),
+                offset: elem.offset.resolve(styles),
+                evade: elem.evade.get(styles),
+                background: elem.background.get(styles),
+            },
+            extent: elem.extent.resolve(styles),
+        }],
     ))
-    .pack()
-    .spanned(elem.span()))
 };
 
-const STRIKE_RULE: ShowFn<StrikeElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| crate::modifiers::layout_strike(elem, engine, config, styles),
+const STRIKE_RULE: ShowFn<StrikeElem> = |elem, _, styles| {
+    Ok(elem.body.clone().set(
+        TextElem::deco,
+        smallvec::smallvec![typst::text::Decoration {
+            line: typst::text::DecoLine::Strikethrough {
+                stroke: Default::default(),
+                offset: elem.offset.resolve(styles),
+                background: elem.background.get(styles),
+            },
+            extent: elem.extent.resolve(styles),
+        }],
     ))
-    .pack()
-    .spanned(elem.span()))
 };
 
-const HIGHLIGHT_RULE: ShowFn<HighlightElem> = |elem, _, _| {
-    Ok(TermBlockElem::new(TermBlockCallback::new(
-        elem.clone(),
-        |elem, engine, config, styles| crate::modifiers::layout_highlight(elem, engine, config, styles),
+const HIGHLIGHT_RULE: ShowFn<HighlightElem> = |elem, _, styles| {
+    Ok(elem.body.clone().set(
+        TextElem::deco,
+        smallvec::smallvec![typst::text::Decoration {
+            line: typst::text::DecoLine::Highlight {
+                fill: elem.fill.get_cloned(styles),
+                stroke: Default::default(),
+                top_edge: elem.top_edge.get(styles),
+                bottom_edge: elem.bottom_edge.get(styles),
+                radius: elem.radius.resolve(styles).unwrap_or_default(),
+            },
+            extent: elem.extent.resolve(styles),
+        }],
     ))
-    .pack()
-    .spanned(elem.span()))
 };
 
 const SMALLCAPS_RULE: ShowFn<SmallcapsElem> = |elem, _, _| {
