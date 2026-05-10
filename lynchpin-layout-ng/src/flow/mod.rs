@@ -74,10 +74,6 @@ pub fn layout_term_fragment(
         content,
         styles,
     )?;
-    eprintln!("DEBUG layout_term_fragment_from_content: {} children", children.len());
-    for (i, (child, _)) in children.iter().enumerate() {
-        eprintln!("DEBUG   child[{}]: {}", i, child.elem().name());
-    }
     layout_flow(
         engine,
         &children,
@@ -141,6 +137,7 @@ pub(crate) fn layout_flow<'a>(
         locator.next(&()),
         regions.base(),
         regions.expand.x,
+        mode,
     )?;
 
     let mut work = Work::new(&children);

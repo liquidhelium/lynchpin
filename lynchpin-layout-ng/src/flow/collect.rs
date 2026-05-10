@@ -9,18 +9,21 @@
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Packed, Resolve, StyleChain};
-use typst::introspection::{Locator, SplitLocator, Tag};
+use typst::introspection::{Locator, SplitLocator, Tag, TagElem};
 use typst_utils::hash128;
 use typst::layout::{
     Axes, FixedAlignment, Fr, PagebreakElem, PlaceElem, Spacing,
     VElem,
 };
 use typst::model::{EnumElem, HeadingElem, ListElem, ParElem, TermsElem};
+
+use typst::layout::AlignElem;
+use typst_utils::SliceExt;
 use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawElem, RawLine, TextElem};
 
 use lynchpin_library_ng::{
-    Row, TermBlockBody, TermBlockElem, TermConfig, TermFrame, TermRegion, TermRegions,
+    Row, TermBlockBody, TermFragment, TermBlockElem, TermConfig, TermFrame, TermRegion, TermRegions,
     TermScalar, TermSize,
 };
 
@@ -35,12 +38,14 @@ pub fn collect<'a>(
     locator: Locator<'a>,
     base: TermSize,
     expand_x: bool,
+    mode: super::FlowMode,
 ) -> SourceResult<Vec<Child<'a>>> {
     Collector {
         engine,
         children,
         base,
         expand_x,
+        mode,
         locator: locator.split(),
         output: Vec::with_capacity(children.len()),
     }
@@ -54,12 +59,16 @@ struct Collector<'a, 'x, 'y> {
     children: &'x [Pair<'a>],
     base: TermSize,
     expand_x: bool,
+    mode: super::FlowMode,
     locator: SplitLocator<'a>,
     output: Vec<Child<'a>>,
 }
 
 impl<'a> Collector<'a, '_, '_> {
     fn run(mut self) -> SourceResult<Vec<Child<'a>>> {
+        if matches!(self.mode, super::FlowMode::Inline) {
+            return self.run_inline();
+        }
         for &(child, styles) in self.children {
             if let Some(elem) = child.to_packed::<TagElem>() {
                 self.output.push(Child::Tag(&elem.tag));
@@ -108,6 +117,57 @@ impl<'a> Collector<'a, '_, '_> {
             Spacing::Fr(fr) => {
                 self.output.push(Child::Fr(fr));
             }
+        }
+    }
+
+    fn run_inline(mut self) -> SourceResult<Vec<Child<'a>>> {
+        let (start, end) = self.children.split_prefix_suffix(|(c, _)| c.is::<TagElem>());
+        let inner = &self.children[start..end];
+        let styles = StyleChain::trunk_from_pairs(inner).unwrap_or_default();
+
+        let frames = crate::inline::layout_inline(
+            self.engine, inner, &mut self.locator, styles, self.base, self.expand_x,
+        )?;
+
+        for (c, _) in &self.children[..start] {
+            let elem = c.to_packed::<TagElem>().unwrap();
+            self.output.push(Child::Tag(&elem.tag));
+        }
+
+        let leading = styles.resolve(ParElem::leading);
+        self.lines(frames, leading, styles);
+
+        for (c, _) in &self.children[end..] {
+            let elem = c.to_packed::<TagElem>().unwrap();
+            self.output.push(Child::Tag(&elem.tag));
+        }
+        Ok(self.output)
+    }
+
+    fn lines(&mut self, lines: TermFragment, leading: typst::layout::Abs, styles: StyleChain<'a>) {
+        let align = styles.resolve(AlignElem::alignment);
+        let costs = styles.get(TextElem::costs);
+        let len = lines.len();
+        let prevent_orphans = costs.orphan() > typst::layout::Ratio::zero() && len >= 2 && !lines[1].size().is_empty();
+        let prevent_widows = costs.widow() > typst::layout::Ratio::zero() && len >= 2 && !lines[len - 2].size().is_empty();
+        let prevent_all = len == 3 && prevent_orphans && prevent_widows;
+        let height_at = |i| lines.get(i).map(|f: &TermFrame| f.rows()).unwrap_or(TermScalar::ZERO);
+        let front_1 = height_at(0);
+        let front_2 = height_at(1);
+        let back_2 = height_at(len.saturating_sub(2));
+        let back_1 = height_at(len.saturating_sub(1));
+
+        for (i, frame) in lines.into_iter().enumerate() {
+            let need = if prevent_all && i == 0 {
+                front_1 + front_2 + back_1
+            } else if prevent_orphans && i == 0 {
+                front_1 + front_2
+            } else if prevent_widows && i >= 2 && i + 2 == len {
+                back_2 + back_1
+            } else {
+                frame.rows()
+            };
+            self.output.push(Child::Line(LineChild { frame, align, need }));
         }
     }
 
@@ -304,7 +364,6 @@ impl<'a> Collector<'a, '_, '_> {
 
 // ── Typst re-exports for convenience ─────────────────────────────────────────
 
-use typst::introspection::TagElem;
 use typst::model::ParbreakElem;
 
 // ── Child enum ───────────────────────────────────────────────────────────────

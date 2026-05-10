@@ -82,14 +82,11 @@ pub mod compile_ng {
                 RealizationKind::LayoutDocument { info: &mut info },
                 &mut engine, &mut locator, &arenas, &content, styles,
             )?;
-            eprintln!("DEBUG: realized {} children", children.len());
 
             document = lynchpin_layout_ng::pages::layout_term_document(
                 &mut engine, &mut children, &mut locator, styles,
             )?;
-            eprintln!("DEBUG: document has {} pages", document.len());
             for (i, page) in document.iter().enumerate() {
-                eprintln!("DEBUG: page[{}] frame size: {:?}", i, page.inner.size());
             }
 
             introspector = &empty_introspector;

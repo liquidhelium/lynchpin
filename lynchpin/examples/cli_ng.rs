@@ -21,13 +21,7 @@ fn main() {
         }
     };
     for page in &doc {
-        eprintln!("DEBUG: page inner items: {}", page.inner.items().len());
-        for (pos, item) in page.inner.items() {
-            eprintln!("DEBUG:   item at ({:?}, {:?}): {:?}", pos.col, pos.row, std::mem::discriminant(item));
-        }
         let grid = page.inner.render();
-        let ansi = grid.to_ansi();
-        eprintln!("DEBUG: ansi output len: {}", ansi.len());
-        print!("{}", ansi);
+        print!("{}", grid.to_ansi());
     }
 }
