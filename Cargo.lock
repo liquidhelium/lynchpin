@@ -1841,7 +1841,6 @@ dependencies = [
  "fontdb",
  "lynchpin-layout-ng",
  "lynchpin-library-ng",
- "lynchpin-term-layout",
  "lynchpin-term-realize",
  "rustc-hash",
  "tinymist-world",
@@ -1893,19 +1892,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lynchpin-library"
-version = "0.1.0"
-dependencies = [
- "comemo",
- "crossterm",
- "ecow",
- "typst",
- "typst-library",
- "typst-macros",
- "unicode-width 0.2.2",
-]
-
-[[package]]
 name = "lynchpin-library-ng"
 version = "0.1.0"
 dependencies = [
@@ -1915,22 +1901,6 @@ dependencies = [
  "typst",
  "typst-library",
  "typst-macros",
- "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "lynchpin-term-layout"
-version = "0.1.0"
-dependencies = [
- "comemo",
- "crossterm",
- "ecow",
- "lynchpin-library",
- "lynchpin-term-realize",
- "rustc-hash",
- "smallvec",
- "typst",
- "unicode-math-class",
  "unicode-width 0.2.2",
 ]
 
