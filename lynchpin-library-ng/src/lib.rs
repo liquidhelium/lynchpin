@@ -35,16 +35,17 @@ use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, NativeElement, Packed, StyleChain};
 use typst::foundations::{IntoValue, Reflect, Value, FromValue};
+use typst::introspection::Locator;
 
 // ── TermBlockCallback ────────────────────────────────────────────────────────
 
 /// A layout callback for terminal block elements.
 ///
-/// Wraps a closure that takes the original element, engine, config, and styles,
-/// and produces a [`TermFrame`]. Accepts both `fn` pointers and closures.
+/// Wraps a closure that takes the original element, engine, locator, styles,
+/// and region, and produces a [`TermFrame`]. Mirrors paged `BlockSingleCallback`.
 pub struct TermBlockCallback {
     captured: Content,
-    f: Arc<dyn Fn(&Content, &mut Engine<'_>, &TermConfig, StyleChain<'_>) -> SourceResult<TermFrame> + Send + Sync>,
+    f: Arc<dyn Fn(&Content, &mut Engine<'_>, Locator<'_>, StyleChain<'_>, TermRegion) -> SourceResult<TermFrame> + Send + Sync>,
 }
 
 impl TermBlockCallback {
@@ -55,16 +56,16 @@ impl TermBlockCallback {
     ) -> Self
     where
         T: NativeElement,
-        F: Fn(&Packed<T>, &mut Engine<'_>, &TermConfig, StyleChain<'_>) -> SourceResult<TermFrame>
+        F: Fn(&Packed<T>, &mut Engine<'_>, Locator<'_>, StyleChain<'_>, TermRegion) -> SourceResult<TermFrame>
             + Send + Sync + 'static,
     {
         Self {
             captured: captured.pack(),
-            f: Arc::new(move |content, engine, config, styles| {
+            f: Arc::new(move |content, engine, locator, styles, region| {
                 let packed: &Packed<T> = content
                     .to_packed()
                     .expect("TermBlockCallback: wrong element type");
-                f(packed, engine, config, styles)
+                f(packed, engine, locator, styles, region)
             }),
         }
     }
@@ -73,10 +74,11 @@ impl TermBlockCallback {
     pub fn call(
         &self,
         engine: &mut Engine<'_>,
-        config: &TermConfig,
+        locator: Locator<'_>,
         styles: StyleChain<'_>,
+        region: TermRegion,
     ) -> SourceResult<TermFrame> {
-        (self.f)(&self.captured, engine, config, styles)
+        (self.f)(&self.captured, engine, locator, styles, region)
     }
 }
 

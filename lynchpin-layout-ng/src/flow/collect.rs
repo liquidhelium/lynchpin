@@ -20,7 +20,7 @@ use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawElem, RawLine, TextElem};
 
 use lynchpin_library_ng::{
-    Row, TermBlockElem, TermConfig, TermFrame, TermScalar, TermSize,
+    Row, TermBlockElem, TermConfig, TermFrame, TermRegion, TermScalar, TermSize,
 };
 
 // ── Collector entry point ────────────────────────────────────────────────────
@@ -369,9 +369,9 @@ impl SingleChild<'_> {
     pub fn layout(
         &self,
         engine: &mut Engine,
-        config: &TermConfig,
+        region: TermRegion,
     ) -> SourceResult<TermFrame> {
-        self.elem.cb.call(engine, config, self.styles)
+        self.elem.cb.call(engine, self.locator.relayout(), self.styles, region)
     }
 }
 
@@ -402,9 +402,9 @@ impl MultiChild<'_> {
     pub fn layout(
         &self,
         engine: &mut Engine,
-        config: &TermConfig,
+        region: TermRegion,
     ) -> SourceResult<TermFrame> {
-        self.elem.cb.call(engine, config, self.styles)
+        self.elem.cb.call(engine, self.locator.relayout(), self.styles, region)
     }
 }
 
@@ -432,11 +432,11 @@ impl<'a, 'b> MultiSpill<'a, 'b> {
     pub fn layout(
         &self,
         engine: &mut Engine,
-        config: &TermConfig,
+        region: TermRegion,
     ) -> SourceResult<Vec<TermFrame>> {
         // In terminal layout, multi spills are simplified:
         // we just re-layout the block and return whatever fits.
-        let frame = self.multi.layout(engine, config)?;
+        let frame = self.multi.layout(engine, region)?;
         Ok(vec![frame])
     }
 

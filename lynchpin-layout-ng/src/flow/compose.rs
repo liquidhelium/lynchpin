@@ -12,7 +12,7 @@ use typst::engine::Engine;
 use typst::introspection::Location;
 
 use lynchpin_library_ng::{
-    Row, TermConfig, TermFrame, TermRegions, TermSize,
+    Row, TermConfig, TermFrame, TermRegion, TermRegions, TermSize,
 };
 
 use super::collect::Child;
@@ -74,6 +74,8 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
         Ok(frames.into_iter().next().unwrap_or_else(|| TermFrame::new(TermSize::ZERO)))
     }
 
+
+
     fn handle_floats(
         &mut self,
         items: &mut Vec<super::distribute::Item<'a>>,
@@ -101,8 +103,9 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
     ) -> SourceResult<()> {
         // Process children from the work queue.
         // In terminal layout, we handle the spill first, then remaining children.
+        let region = TermRegion::new(self.regions.size, self.regions.expand);
         if let Some(spill) = self.work.spill.take() {
-            let frames = spill.layout(self.engine, &TermConfig::default())?;
+            let frames = spill.layout(self.engine, region)?;
             for frame in frames {
                 if !frame.size().is_empty() {
                     items.push(distribute::Item::Frame(frame));
@@ -127,13 +130,13 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
                     }
                 }
                 Child::Single(single) => {
-                    let frame = single.layout(self.engine, &TermConfig::default())?;
+                    let frame = single.layout(self.engine, region)?;
                     if !frame.size().is_empty() {
                         items.push(distribute::Item::Frame(frame));
                     }
                 }
                 Child::Multi(multi) => {
-                    let frame = multi.layout(self.engine, &TermConfig::default())?;
+                    let frame = multi.layout(self.engine, region)?;
                     if !frame.size().is_empty() {
                         items.push(distribute::Item::Frame(frame));
                     }
