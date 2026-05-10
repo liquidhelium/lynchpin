@@ -84,7 +84,7 @@ pub fn layout_cell(
 
     let locator = locator.next(&cell.body.span());
 
-    let fragment = crate::flow::layout_term_fragment_from_content(engine, &cell.body, locator, styles, regions)?;
+    let fragment = crate::flow::layout_term_fragment(engine, &cell.body, locator, styles, regions)?;
 
 
     // Manually insert tags.

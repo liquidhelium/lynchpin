@@ -28,7 +28,7 @@ pub fn layout_repeat(
         TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
         Axes::new(false, false),
     );
-    let piece = crate::flow::layout_term_frame_from_content(engine,&elem.body,
+    let piece = crate::flow::layout_term_frame(engine,&elem.body,
         typst_library::introspection::Locator::root(),
         styles,
         pod_region,

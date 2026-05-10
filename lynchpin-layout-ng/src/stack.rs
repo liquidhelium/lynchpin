@@ -186,7 +186,7 @@ impl<'a> StackLayouter<'a> {
         let region = TermRegion::new(self.regions.size, self.regions.expand);
         let frame = crate::flow::layout_term_frame(
             engine,
-            &[(block, styles)],
+            &block,
             typst_library::introspection::Locator::root(),
             styles,
             region,

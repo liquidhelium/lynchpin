@@ -39,7 +39,7 @@ pub fn layout_list(
 
     for item in &elem.children {
         let bullet = TermFrame::text("• ", Default::default(), TermScalar::new(2), TermScalar::ONE);
-        let body_frame = crate::flow::layout_term_frame_from_content(engine,&item.body,
+        let body_frame = crate::flow::layout_term_frame(engine,&item.body,
             typst_library::introspection::Locator::root(),
             styles,
             TermRegion::new(
@@ -106,7 +106,7 @@ pub fn layout_enum(
         let prefix_text = format!("{}. ", number);
         let prefix_cols = TermScalar::new(prefix_text.len() as i32);
         let prefix = TermFrame::text(prefix_text, Default::default(), prefix_cols, TermScalar::ONE);
-        let body_frame = crate::flow::layout_term_frame_from_content(engine,&item.body,
+        let body_frame = crate::flow::layout_term_frame(engine,&item.body,
             typst_library::introspection::Locator::root(),
             styles,
             TermRegion::new(
@@ -162,7 +162,7 @@ pub fn layout_terms(
     let mut frames: Vec<TermFrame> = Vec::new();
 
     for item in &elem.children {
-        let term_frame = crate::flow::layout_term_frame_from_content(engine,&item.term,
+        let term_frame = crate::flow::layout_term_frame(engine,&item.term,
             typst_library::introspection::Locator::root(),
             styles,
             TermRegion::new(
@@ -182,7 +182,7 @@ pub fn layout_terms(
         );
         let sep_cols_size = sep_frame.size().cols;
 
-        let desc_frame = crate::flow::layout_term_frame_from_content(engine,&item.description,
+        let desc_frame = crate::flow::layout_term_frame(engine,&item.description,
             typst_library::introspection::Locator::root(),
             styles,
             TermRegion::new(

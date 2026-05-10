@@ -41,21 +41,21 @@ use self::compose::compose;
 /// Lays out a single [`Content`] node into a frame.  Realizes internally.
 ///
 /// This is the terminal equivalent of paged `layout_frame(&Content, ...)`.
-pub fn layout_term_frame_from_content(
+pub fn layout_term_frame(
     engine: &mut Engine,
     content: &Content,
     locator: Locator<'_>,
     styles: StyleChain<'_>,
     region: TermRegion,
 ) -> SourceResult<TermFrame> {
-    let fragment = layout_term_fragment_from_content(engine, content, locator, styles, region.into())?;
+    let fragment = layout_term_fragment(engine, content, locator, styles, region.into())?;
     Ok(fragment.into_iter().next().unwrap_or_else(|| TermFrame::new(TermSize::ZERO)))
 }
 
 /// Lays out [`Content`] into terminal regions.  Realizes internally.
 ///
 /// This is the terminal equivalent of paged `layout_fragment(&Content, ...)`.
-pub fn layout_term_fragment_from_content(
+pub fn layout_term_fragment(
     engine: &mut Engine,
     content: &Content,
     locator: Locator<'_>,
@@ -90,40 +90,6 @@ pub fn layout_term_fragment_from_content(
     )
 }
 
-/// Lays out content into a single region, producing a single frame.
-pub fn layout_term_frame(
-    engine: &mut Engine,
-    children: &[Pair<'_>],
-    locator: Locator<'_>,
-    styles: StyleChain<'_>,
-    region: TermRegion,
-) -> SourceResult<TermFrame> {
-    let fragment = layout_term_fragment(engine, children, locator, styles, region.into())?;
-    Ok(fragment.into_iter().next().unwrap_or_else(|| TermFrame::new(TermSize::ZERO)))
-}
-
-/// Lays out content into multiple regions.
-///
-/// When laying out into just one region, prefer [`layout_term_frame`].
-pub fn layout_term_fragment(
-    engine: &mut Engine,
-    children: &[Pair<'_>],
-    locator: Locator<'_>,
-    styles: StyleChain<'_>,
-    regions: TermRegions,
-) -> SourceResult<TermFragment> {
-    layout_flow(
-        engine,
-        children,
-        &mut locator.split(),
-        styles,
-        regions,
-        NonZeroUsize::new(1).unwrap(),
-        TermScalar::ZERO,
-        FlowMode::Root,
-    )
-}
-
 // ── FlowMode ─────────────────────────────────────────────────────────────────
 
 /// The mode a flow can be laid out in.
@@ -150,7 +116,7 @@ impl From<FragmentKind> for FlowMode {
 
 /// Lays out realized content into regions, potentially with columns.
 #[allow(clippy::too_many_arguments)]
-pub fn layout_flow<'a>(
+pub(crate) fn layout_flow<'a>(
     engine: &mut Engine,
     children: &[Pair<'a>],
     locator: &mut SplitLocator<'a>,

@@ -9,7 +9,9 @@ use typst_library::diag::SourceResult;
 use typst_library::engine::Engine;
 use typst_library::foundations::{Packed, StyleChain};
 use typst_library::model::{EmphElem, StrongElem};
-use typst_library::text::{HighlightElem, OverlineElem, SmallcapsElem, StrikeElem, SubElem, SuperElem, UnderlineElem};
+use typst_library::text::{
+    HighlightElem, OverlineElem, SmallcapsElem, StrikeElem, SubElem, SuperElem, UnderlineElem,
+};
 
 use lynchpin_library_ng::*;
 
@@ -134,11 +136,14 @@ fn layout_with_style(
     // The style is applied during inline text collection.
     crate::flow::layout_term_frame(
         engine,
-        &[(body, styles)],
+        body,
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
-            TermSize::new(lynchpin_library_ng::resolve_page_size(styles).cols, TermScalar::INFINITY),
+            TermSize::new(
+                lynchpin_library_ng::resolve_page_size(styles).cols,
+                TermScalar::INFINITY,
+            ),
             Axes::new(false, false),
         ),
     )

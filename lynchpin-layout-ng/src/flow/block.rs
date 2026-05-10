@@ -58,7 +58,7 @@ pub fn layout_single_block(
     match body {
         None => Ok(TermFrame::new(TermSize::ZERO)),
         Some(TermBlockBody::Content(content)) => {
-            crate::flow::layout_term_frame_from_content(engine, content, locator, styles, region)
+            crate::flow::layout_term_frame(engine, content, locator, styles, region)
         }
         Some(TermBlockBody::SingleLayouter(cb)) => {
             cb.call(engine, locator, styles, region)
@@ -87,7 +87,7 @@ pub fn layout_multi_block(
     match body {
         None => Ok(vec![TermFrame::new(TermSize::ZERO)]),
         Some(TermBlockBody::Content(content)) => {
-            crate::flow::layout_term_fragment_from_content(engine, content, locator, styles, regions)
+            crate::flow::layout_term_fragment(engine, content, locator, styles, regions)
         }
         Some(TermBlockBody::SingleLayouter(cb)) => {
             // Single in multi region context: take base region only.
