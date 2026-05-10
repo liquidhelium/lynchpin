@@ -12,7 +12,7 @@ use typst::foundations::{Resolve, StyleChain};
 use typst::layout::PageElem;
 use typst::text::TextElem;
 
-use crate::frame::{Col, Row, TermSize};
+use crate::frame::{Col, TermSize};
 use crate::scalar::TermScalar;
 
 // ── RenderMode ────────────────────────────────────────────────────────────────

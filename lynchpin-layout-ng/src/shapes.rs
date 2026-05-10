@@ -229,7 +229,7 @@ pub fn layout_polygon(
 pub fn layout_curve(
     elem: &Packed<typst_library::visualize::CurveElem>,
     _engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     // Curves are complex to render in terminal; return an empty frame.
@@ -244,7 +244,7 @@ pub fn layout_curve(
 pub fn layout_path(
     elem: &Packed<PathElem>,
     _engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     // Paths are complex to render in terminal; return an empty frame.

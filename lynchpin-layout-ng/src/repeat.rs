@@ -20,7 +20,7 @@ use lynchpin_library_ng::units::abs_to_cols;
 pub fn layout_repeat(
     elem: &Packed<RepeatElem>,
     engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     // Layout a single piece with no expansion.

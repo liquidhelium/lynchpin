@@ -34,22 +34,20 @@ use crossterm::style::{Attribute, Color, ContentStyle};
 use ecow::EcoString;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::{Content, Packed, Resolve, SequenceElem, StyleChain, StyledElem};
+use typst::foundations::{Content, Packed, Resolve, StyleChain};
 use typst::introspection::SplitLocator;
 use typst::layout::FixedAlignment;
-use typst::layout::{AlignElem, BoxElem, HElem, HideElem};
-use typst::math::EquationElem;
-use typst::model::{EmphElem, ParElem, StrongElem};
+use typst::layout::AlignElem;
+use typst::model::ParElem;
 use typst::routines::Pair;
 use typst::text::{
-    DecoLine, HighlightElem, LinebreakElem, OverlineElem, SpaceElem, StrikeElem, SubElem,
-    SuperElem, TextElem, UnderlineElem, WeightDelta,
+    DecoLine, LinebreakElem, SpaceElem, TextElem, WeightDelta,
 };
 use typst::visualize::Paint;
 
 use lynchpin_library_ng::{
     Col, Row, TermConfig, TermFragment, TermFrame, TermInlineElem, TermInlineItem, TermPoint,
-    TermRegion, TermScalar, TermSize, char_cols, text_cols,
+    TermRegion, TermScalar, TermSize, text_cols,
 };
 
 // ── Inline item ───────────────────────────────────────────────────────────────
@@ -446,9 +444,9 @@ pub fn layout_par(
 pub fn layout_paragraph(
     engine: &mut Engine,
     content: &Content,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
-    base_style: ContentStyle,
+    _base_style: ContentStyle,
     situation: Option<ParSituation>,
     max_width: Col,
 ) -> SourceResult<TermFrame> {

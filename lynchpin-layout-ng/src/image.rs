@@ -19,7 +19,7 @@ use lynchpin_library_ng::*;
 pub fn layout_image(
     elem: &Packed<ImageElem>,
     engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = engine;

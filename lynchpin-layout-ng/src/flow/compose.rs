@@ -12,7 +12,7 @@ use typst::engine::Engine;
 use typst::introspection::Location;
 
 use lynchpin_library_ng::{
-    Row, TermConfig, TermFrame, TermFragment, TermRegion, TermRegions, TermSize,
+    Row, TermConfig, TermFrame, TermFragment, TermRegion, TermRegions,
 };
 
 use super::collect::Child;

@@ -21,7 +21,7 @@ use typst::model::{
 };
 use typst::text::{
     HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem, RawLine, ScriptKind,
-    ShiftSettings, SmallcapsElem, StrikeElem, SubElem, SuperElem, TextElem, TextSize,
+    ShiftSettings, SmallcapsElem, StrikeElem, SubElem, SuperElem, TextElem,
     UnderlineElem, WeightDelta,
 };
 use typst::visualize::{
@@ -31,7 +31,7 @@ use typst::visualize::{
 
 use lynchpin_library_ng::{
     Col, Row, TermBlockBody, TermBlockCallback, TermBlockElem, TermConfig, TermFrame,
-    TermInlineCallback, TermInlineElem, TermInlineItem, TermPoint, TermRegion, TermRegions,
+    TermInlineCallback, TermInlineElem, TermInlineItem, TermPoint, TermRegions,
     TermScalar, TermSize,
 };
 
@@ -189,7 +189,7 @@ const FIGURE_RULE: ShowFn<FigureElem> = |elem, _, _| {
 
 const FIGURE_CAPTION_RULE: ShowFn<FigureCaption> = |elem, engine, styles| {
     let realized = elem.realize(engine, styles)?;
-    let page_width = lynchpin_library_ng::resolve_page_size(styles).cols;
+    let _page_width = lynchpin_library_ng::resolve_page_size(styles).cols;
     Ok(TermBlockElem::new()
         .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
             elem.clone(),
@@ -235,7 +235,7 @@ const FOOTNOTE_RULE: ShowFn<FootnoteElem> = |elem, engine, styles| {
 
 const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
     let (prefix, body) = elem.realize(engine, styles)?;
-    let pw = lynchpin_library_ng::resolve_page_size(styles).cols;
+    let _pw = lynchpin_library_ng::resolve_page_size(styles).cols;
     Ok(TermBlockElem::new()
         .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
             elem.clone(),
@@ -263,7 +263,7 @@ const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
 
 const REF_RULE: ShowFn<RefElem> = |elem, engine, styles| {
     let realized = elem.realize(engine, styles)?;
-    let pw = lynchpin_library_ng::resolve_page_size(styles).cols;
+    let _pw = lynchpin_library_ng::resolve_page_size(styles).cols;
     Ok(TermBlockElem::new()
         .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
             elem.clone(),
@@ -306,7 +306,7 @@ const TABLE_CELL_RULE: ShowFn<TableCell> = |elem, _, _| {
 // ── Text rules ───────────────────────────────────────────────────────────────
 
 const SUB_RULE: ShowFn<SubElem> = |elem, _, styles| {
-    use typst::layout::{Em, Length};
+    use typst::layout::Em;
     let font_size = styles.resolve(TextElem::size);
     Ok(elem.body.clone().set(
         TextElem::shift_settings,
@@ -326,7 +326,7 @@ const SUB_RULE: ShowFn<SubElem> = |elem, _, styles| {
 };
 
 const SUPER_RULE: ShowFn<SuperElem> = |elem, _, styles| {
-    use typst::layout::{Em, Length};
+    use typst::layout::Em;
     let font_size = styles.resolve(TextElem::size);
     Ok(elem.body.clone().set(
         TextElem::shift_settings,

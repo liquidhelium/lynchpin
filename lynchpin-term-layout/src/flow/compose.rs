@@ -7,7 +7,7 @@
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 
-use lynchpin_library::frame::{Row, TermFrame, TermSize};
+use lynchpin_library::frame::{TermFrame, TermSize};
 use lynchpin_library::regions::TermRegions;
 
 use crate::config::TermConfig;
@@ -49,7 +49,7 @@ pub fn compose(
     engine: &mut Engine,
     work: &mut Work<'_>,
     config: &TermConfig,
-    mut regions: TermRegions,
+    regions: TermRegions,
 ) -> SourceResult<TermFrame> {
     // Process floats first, then in-flow content.
     let mut all_children: Vec<Child> = Vec::new();

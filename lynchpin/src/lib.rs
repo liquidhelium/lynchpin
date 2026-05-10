@@ -115,7 +115,7 @@ pub mod compile_ng {
             document = lynchpin_layout_ng::pages::layout_term_document(
                 &mut engine, &mut children, &mut locator, styles,
             )?;
-            for (i, page) in document.iter().enumerate() {
+            for (_i, _page) in document.iter().enumerate() {
             }
 
             introspector = &empty_introspector;

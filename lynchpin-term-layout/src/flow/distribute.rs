@@ -189,7 +189,7 @@ impl Distributor<'_, '_> {
     fn keep_spacing(&mut self, amount: lynchpin_library::frame::Row) -> bool {
         for item in self.items.iter_mut().rev() {
             match item {
-                Item::Abs(prev_amount, prev_weak @ true) => {
+                Item::Abs(prev_amount, _prev_weak @ true) => {
                     // Collapse: keep the larger spacing.
                     if amount <= *prev_amount {
                         // New spacing is weaker or equal, skip.

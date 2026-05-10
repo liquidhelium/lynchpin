@@ -14,7 +14,7 @@ use typst::layout::Axes;
 use typst::routines::Pair;
 
 use lynchpin_library_ng::{
-    Col, Row, TermFrame, TermRegions, TermScalar, TermSize,
+    TermFrame, TermRegions, TermScalar, TermSize,
 };
 
 use crate::flow::{FlowMode, layout_flow};

@@ -27,7 +27,7 @@ use lynchpin_library_ng::units::abs_to_cols;
 pub fn layout_move(
     elem: &Packed<MoveElem>,
     engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let mut frame = crate::flow::layout_term_frame(engine,&elem.body,
@@ -63,7 +63,7 @@ pub fn layout_move(
 pub fn layout_rotate(
     elem: &Packed<RotateElem>,
     engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = elem.angle.get(styles); // rotation angle ignored
@@ -84,7 +84,7 @@ pub fn layout_rotate(
 pub fn layout_scale(
     elem: &Packed<ScaleElem>,
     engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = (elem.x.get(styles), elem.y.get(styles)); // scale factors ignored
@@ -105,7 +105,7 @@ pub fn layout_scale(
 pub fn layout_skew(
     elem: &Packed<SkewElem>,
     engine: &mut Engine,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = (elem.ax.get(styles), elem.ay.get(styles)); // skew angles ignored

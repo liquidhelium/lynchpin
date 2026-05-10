@@ -128,7 +128,7 @@ pub fn layout_smallcaps(
 fn layout_with_style(
     engine: &mut Engine,
     body: &typst_library::foundations::Content,
-    config: &TermConfig,
+    _config: &TermConfig,
     styles: StyleChain,
     _base_style: ContentStyle,
 ) -> SourceResult<TermFrame> {

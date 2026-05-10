@@ -18,7 +18,7 @@ use typst::routines::Pair;
 
 use ecow::EcoString;
 use crossterm::style::ContentStyle;
-use lynchpin_library_ng::{TermFrame, TermPoint, TermScalar};
+use lynchpin_library_ng::{TermPoint, TermScalar};
 
 use self::collect::{Item, collect};
 use self::finalize::finalize;

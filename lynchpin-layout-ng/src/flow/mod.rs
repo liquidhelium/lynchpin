@@ -11,7 +11,6 @@ mod collect;
 mod compose;
 mod distribute;
 
-pub(crate) use self::block::unbreakable_pod;
 
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -24,7 +23,7 @@ use typst::foundations::{Content, StyleChain};
 use typst::introspection::{Locator, SplitLocator, Tag};
 use typst::layout::Axes;
 use typst::model::FootnoteElem;
-use typst::routines::{Pair, FragmentKind, RealizationKind, Arenas};
+use typst::routines::{Pair, FragmentKind};
 
 use lynchpin_library_ng::{
     Col, TermFrame, TermFragment, TermRegion, TermRegions, TermScalar, TermSize,

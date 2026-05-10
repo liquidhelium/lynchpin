@@ -8,7 +8,7 @@
 
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::{Packed, Resolve, StyleChain};
+use typst::foundations::{Packed, StyleChain};
 use typst::introspection::Locator;
 use typst::layout::Axes;
 

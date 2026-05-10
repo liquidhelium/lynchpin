@@ -18,7 +18,7 @@ use typst::introspection::Tag;
 use typst::layout::{FixedAlignment, Fr};
 
 use lynchpin_library_ng::{
-    Col, Row, TermFrame, TermFragment, TermPoint, TermRegions, TermScalar, TermSize,
+    Col, Row, TermFrame, TermPoint, TermRegions, TermScalar, TermSize,
 };
 
 use super::Config;

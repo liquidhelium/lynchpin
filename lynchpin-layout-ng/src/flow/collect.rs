@@ -23,7 +23,7 @@ use typst::routines::Pair;
 use typst::text::{LinebreakElem, RawElem, RawLine, TextElem};
 
 use lynchpin_library_ng::{
-    Row, TermBlockBody, TermFragment, TermBlockElem, TermConfig, TermFrame, TermRegion, TermRegions,
+    Row, TermFragment, TermBlockElem, TermConfig, TermFrame, TermRegion, TermRegions,
     TermScalar, TermSize,
 };
 
@@ -144,7 +144,7 @@ impl<'a> Collector<'a, '_, '_> {
         Ok(self.output)
     }
 
-    fn lines(&mut self, lines: TermFragment, leading: typst::layout::Abs, styles: StyleChain<'a>) {
+    fn lines(&mut self, lines: TermFragment, _leading: typst::layout::Abs, styles: StyleChain<'a>) {
         let align = styles.resolve(AlignElem::alignment);
         let costs = styles.get(TextElem::costs);
         let len = lines.len();
