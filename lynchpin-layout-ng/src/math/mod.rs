@@ -24,6 +24,7 @@ pub mod underover;
 
 use lynchpin_library_ng::config::TermConfig;
 use lynchpin_library_ng::frame::{Col, TermFrame, TermSize};
+use tracing::debug;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem};
@@ -475,10 +476,14 @@ pub fn layout_equation_block(
     let mut ctx = TermMathContext::new(engine, config, true);
     let run = ctx.layout_into_run(&elem.body, styles)?;
 
+    debug!("layout_equation_block: is_multiline={}", run.is_multiline());
+
     if run.is_multiline() {
         Ok(run.multiline_frame())
     } else {
         let frame = run.into_frame();
+        debug!("layout_equation_block: frame cols={:?} rows={:?} baseline={:?}",
+            frame.cols(), frame.rows(), frame.baseline());
         // Pad block equations with 1 blank column on each side for readability.
         if frame.cols() > Col::ZERO {
             let mut padded = TermFrame::new(TermSize::new(
@@ -487,6 +492,7 @@ pub fn layout_equation_block(
             ));
             padded.set_baseline(frame.baseline());
             padded.push_frame(lynchpin_library_ng::frame::TermPoint::new(Col::new(1), lynchpin_library_ng::frame::Row::ZERO), frame);
+            debug!("layout_equation_block: padded to cols={:?} rows={:?}", padded.cols(), padded.rows());
             Ok(padded)
         } else {
             Ok(frame)

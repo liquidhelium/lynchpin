@@ -5,6 +5,7 @@
 use crossterm::style::ContentStyle;
 use ecow::EcoString;
 use lynchpin_library_ng::frame::{char_cols, Col, Row, TermFrame, TermPoint, TermSize};
+use tracing::debug;
 
 use super::fragment::{MathClass, TermMathFragment, TermMathFrameFragment};
 
@@ -178,6 +179,18 @@ impl TermMathRun {
         let total_rows = (ascent + descent).max(Row::ZERO);
         let total_cols = self.total_width().max(Col::ZERO);
 
+        debug!("TermMathRun::into_frame: n_frags={} ascent={:?} descent={:?} total_cols={:?} total_rows={:?}",
+            self.0.len(), ascent, descent, total_cols, total_rows);
+        for (i, frag) in self.0.iter().enumerate() {
+            match frag {
+                TermMathFragment::Frame(ff) => {
+                    debug!("  frag[{}]: Frame cols={:?} rows={:?} ascent={:?} class={:?}",
+                        i, ff.frame.cols(), ff.frame.rows(), ff.ascent(), ff.class);
+                }
+                _ => debug!("  frag[{}]: {:?}", i, std::mem::discriminant(frag)),
+            }
+        }
+
         let mut frame = TermFrame::new(TermSize::new(total_cols, total_rows));
         frame.set_baseline(ascent);
 
@@ -345,6 +358,13 @@ pub fn compose_horizontal(frames: Vec<TermFrame>, gap: Col) -> TermFrame {
     let content_width: Col = frames.iter().map(|f| f.cols()).sum();
     let gap_width: Col = gap * (n.saturating_sub(1) as f64);
     let total_cols = (content_width + gap_width).max(Col::ZERO);
+
+    debug!("compose_horizontal: n={} max_ascent={:?} max_descent={:?} total_cols={:?} total_rows={:?}",
+        n, max_ascent, max_descent, total_cols, total_rows);
+    for (i, f) in frames.iter().enumerate() {
+        debug!("  frame[{}]: cols={:?} rows={:?} ascent={:?} baseline={:?}",
+            i, f.cols(), f.rows(), f.ascent(), f.baseline());
+    }
 
     let mut out = TermFrame::new(TermSize::new(total_cols, total_rows));
     out.set_baseline(max_ascent);

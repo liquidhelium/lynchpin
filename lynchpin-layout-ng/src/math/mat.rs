@@ -6,6 +6,7 @@
 
 use crossterm::style::ContentStyle;
 use lynchpin_library_ng::frame::{Col, Row, TermFrame, TermPoint, TermSize};
+use tracing::debug;
 use typst::diag::SourceResult;
 use typst::foundations::{Packed, StyleChain};
 use typst::math::{CasesElem, MatElem, VecElem};
@@ -44,8 +45,13 @@ pub fn layout_vec(
     let mid_idx = frames.len() / 2;
     let body = compose_vertical(frames, Row::ZERO, mid_idx);
 
+    let body_cols = body.cols();
+    let body_rows = body.rows();
     let delim = elem.delim.get(styles);
-    ctx.push(wrap_with_delimiters(ctx, body, delim.open(), delim.close()));
+    let result = wrap_with_delimiters(ctx, body, delim.open(), delim.close());
+    debug!("layout_vec: body cols={:?} rows={:?}, composed cols={:?} rows={:?}",
+        body_cols, body_rows, result.frame.cols(), result.frame.rows());
+    ctx.push(result);
     Ok(())
 }
 
@@ -147,8 +153,18 @@ pub fn layout_mat(
         y = y + row_height + row_gap;
     }
 
+    let body_cols = body.cols();
+    let body_rows = body.rows();
+    let body_baseline = body.baseline();
+    let body_positions: Vec<_> = body.items().iter().map(|(p, _)| (p.col, p.row)).collect();
     let delim = elem.delim.get(styles);
-    ctx.push(wrap_with_delimiters(ctx, body, delim.open(), delim.close()));
+    let result = wrap_with_delimiters(ctx, body, delim.open(), delim.close());
+    debug!(
+        "layout_mat: body cols={:?} rows={:?} baseline={:?}, cell_positions={:?}, composed cols={:?} rows={:?}",
+        body_cols, body_rows, body_baseline, body_positions,
+        result.frame.cols(), result.frame.rows(),
+    );
+    ctx.push(result);
     Ok(())
 }
 

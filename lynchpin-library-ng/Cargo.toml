@@ -11,3 +11,4 @@ crossterm = "0.29"
 unicode-width = "0.2"
 ecow = "0.2"
 comemo = "0.5"
+tracing = { workspace = true }
