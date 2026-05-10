@@ -297,6 +297,94 @@ pub struct TermPage {
 /// A terminal document — mirrors paged `PagedDocument`.
 pub type TermDocument = Vec<TermPage>;
 
+// ── TermInlineElem ──────────────────────────────────────────────────────────
+
+/// An inline-level element with a custom layouter.
+///
+/// Mirrors paged `InlineElem`.  The callback receives the available region
+/// width and returns inline items that are placed into the paragraph flow.
+#[typst_macros::elem]
+pub struct TermInlineElem {
+    /// The layout callback.
+    pub cb: Option<TermInlineCallback>,
+}
+
+/// Callback for [`TermInlineElem`]
+
+/// Callback for [`TermInlineElem`] — mirrors paged `InlineCallback`.
+///
+/// Returns a vector of inline items that are placed into the paragraph.
+pub struct TermInlineCallback {
+    captured: Content,
+    f: Arc<dyn Fn(&Content, &mut Engine<'_>, Locator<'_>, StyleChain<'_>, TermRegion) -> SourceResult<Vec<TermInlineItem>> + Send + Sync>,
+}
+
+impl TermInlineCallback {
+    pub fn new<T, F>(captured: Packed<T>, f: F) -> Self
+    where
+        T: NativeElement,
+        F: Fn(&Packed<T>, &mut Engine<'_>, Locator<'_>, StyleChain<'_>, TermRegion) -> SourceResult<Vec<TermInlineItem>>
+            + Send + Sync + 'static,
+    {
+        Self {
+            captured: captured.pack(),
+            f: Arc::new(move |content, engine, locator, styles, region| {
+                let packed: &Packed<T> = content.to_packed().expect("TermInlineCallback: wrong element type");
+                f(packed, engine, locator, styles, region)
+            }),
+        }
+    }
+
+    pub fn call(&self, engine: &mut Engine<'_>, locator: Locator<'_>, styles: StyleChain<'_>, region: TermRegion) -> SourceResult<Vec<TermInlineItem>> {
+        (self.f)(&self.captured, engine, locator, styles, region)
+    }
+}
+
+impl Clone for TermInlineCallback {
+    fn clone(&self) -> Self {
+        Self { captured: self.captured.clone(), f: Arc::clone(&self.f) }
+    }
+}
+
+impl Debug for TermInlineCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TermInlineCallback").field("captured", &self.captured).finish()
+    }
+}
+
+impl PartialEq for TermInlineCallback {
+    fn eq(&self, other: &Self) -> bool { self.captured == other.captured }
+}
+
+impl std::hash::Hash for TermInlineCallback {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.captured.hash(state); }
+}
+
+impl Reflect for TermInlineCallback {
+    fn input() -> typst::foundations::CastInfo { typst::foundations::CastInfo::Any }
+    fn output() -> typst::foundations::CastInfo { typst::foundations::CastInfo::Any }
+    fn castable(_: &Value) -> bool { false }
+}
+
+impl IntoValue for TermInlineCallback {
+    fn into_value(self) -> Value { Value::None }
+}
+
+impl FromValue for TermInlineCallback {
+    fn from_value(_value: Value) -> typst::diag::HintedStrResult<Self> {
+        Err(typst::diag::HintedString::from("cannot construct TermInlineCallback from value"))
+    }
+}
+
+/// An item produced by an inline-level layouter.
+#[derive(Debug, Clone)]
+pub enum TermInlineItem {
+    /// A text run.
+    Text(ecow::EcoString, crossterm::style::ContentStyle),
+    /// A sub-frame with baseline.
+    Frame(TermFrame),
+}
+
 // ── TermFragment ─────────────────────────────────────────────────────────────
 
 /// A sequence of terminal frames — terminal equivalent of `Fragment`.

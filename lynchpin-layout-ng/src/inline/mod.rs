@@ -36,6 +36,7 @@ use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Content, Packed, Resolve, SequenceElem, StyleChain, StyledElem};
 use typst::introspection::SplitLocator;
+use typst::layout::FixedAlignment;
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem};
 use typst::math::EquationElem;
 use typst::model::{EmphElem, ParElem, StrongElem};
@@ -45,11 +46,10 @@ use typst::text::{
     SuperElem, TextElem, UnderlineElem, WeightDelta,
 };
 use typst::visualize::Paint;
-use typst::layout::FixedAlignment;
 
 use lynchpin_library_ng::{
-    Col, Row, TermFrame, TermPoint, TermSize, TermConfig, TermScalar, TermFragment,
-    char_cols, text_cols,
+    Col, Row, TermConfig, TermFragment, TermFrame, TermInlineElem, TermInlineItem, TermPoint,
+    TermRegion, TermScalar, TermSize, char_cols, text_cols,
 };
 
 // ── Inline item ───────────────────────────────────────────────────────────────
@@ -131,7 +131,12 @@ fn para_config(styles: StyleChain, situation: Option<ParSituation>) -> ParaConfi
 
     let align = styles.get(AlignElem::alignment).resolve(styles).x;
 
-    ParaConfig { justify, first_line_indent, hanging_indent: hanging_cols, align }
+    ParaConfig {
+        justify,
+        first_line_indent,
+        hanging_indent: hanging_cols,
+        align,
+    }
 }
 
 // ── Content-tree walker ───────────────────────────────────────────────────────
@@ -149,26 +154,47 @@ fn collect_items(
             collect_items(child, styles, base_style, items, engine, config);
         }
     } else if let Some(s) = content.to_packed::<StyledElem>() {
-        collect_items(&s.child, styles.chain(&s.styles), base_style, items, engine, config);
+        collect_items(
+            &s.child,
+            styles.chain(&s.styles),
+            base_style,
+            items,
+            engine,
+            config,
+        );
     } else if let Some(elem) = content.to_packed::<TextElem>() {
         let text: EcoString = if let Some(case) = styles.get(TextElem::case) {
             case.apply(&elem.text).into()
         } else {
             elem.text.clone()
         };
-        if text.is_empty() { return; }
+        if text.is_empty() {
+            return;
+        }
 
         let mut style = base_style;
         let WeightDelta(delta) = styles.get(TextElem::delta);
-        if delta > 0 { style.attributes.set(Attribute::Bold); }
-        if styles.get(TextElem::emph).0 { style.attributes.set(Attribute::Italic); }
+        if delta > 0 {
+            style.attributes.set(Attribute::Bold);
+        }
+        if styles.get(TextElem::emph).0 {
+            style.attributes.set(Attribute::Italic);
+        }
 
         for deco in styles.get_cloned(TextElem::deco).iter() {
             match &deco.line {
-                DecoLine::Underline { .. } => { style.attributes.set(Attribute::Underlined); }
-                DecoLine::Strikethrough { .. } => { style.attributes.set(Attribute::CrossedOut); }
-                DecoLine::Overline { .. } => { style.attributes.set(Attribute::OverLined); }
-                DecoLine::Highlight { .. } => { style.background_color = Some(Color::Yellow); }
+                DecoLine::Underline { .. } => {
+                    style.attributes.set(Attribute::Underlined);
+                }
+                DecoLine::Strikethrough { .. } => {
+                    style.attributes.set(Attribute::CrossedOut);
+                }
+                DecoLine::Overline { .. } => {
+                    style.attributes.set(Attribute::OverLined);
+                }
+                DecoLine::Highlight { .. } => {
+                    style.background_color = Some(Color::Yellow);
+                }
             }
         }
 
@@ -177,7 +203,9 @@ fn collect_items(
             if let Paint::Solid(c) = fill {
                 let r = c.to_linear_rgb();
                 style.foreground_color = Some(Color::Rgb {
-                    r: (r.red * 256.0) as u8, g: (r.green * 256.0) as u8, b: (r.blue * 256.0) as u8,
+                    r: (r.red * 256.0) as u8,
+                    g: (r.green * 256.0) as u8,
+                    b: (r.blue * 256.0) as u8,
                 });
             }
         }
@@ -196,36 +224,48 @@ fn collect_items(
         let mut hidden: Vec<InlineItem> = Vec::new();
         collect_items(&elem.body, styles, base_style, &mut hidden, engine, config);
         let width: Col = hidden.iter().map(|i| i.width()).sum();
-        if width > TermScalar::ZERO { items.push(InlineItem::Space(width)); }
+        if width > TermScalar::ZERO {
+            items.push(InlineItem::Space(width));
+        }
     } else if let Some(elem) = content.to_packed::<BoxElem>() {
         if let Some(body) = elem.body.get_ref(styles) {
             collect_items(body, styles, base_style, items, engine, config);
         }
     } else if let Some(elem) = content.to_packed::<HElem>() {
-        if !elem.amount.is_zero() { items.push(InlineItem::Space(TermScalar::ONE)); }
+        if !elem.amount.is_zero() {
+            items.push(InlineItem::Space(TermScalar::ONE));
+        }
     } else if let Some(elem) = content.to_packed::<StrongElem>() {
-        let mut s = base_style; s.attributes.set(Attribute::Bold);
+        let mut s = base_style;
+        s.attributes.set(Attribute::Bold);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<EmphElem>() {
-        let mut s = base_style; s.attributes.set(Attribute::Italic);
+        let mut s = base_style;
+        s.attributes.set(Attribute::Italic);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<UnderlineElem>() {
-        let mut s = base_style; s.attributes.set(Attribute::Underlined);
+        let mut s = base_style;
+        s.attributes.set(Attribute::Underlined);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<StrikeElem>() {
-        let mut s = base_style; s.attributes.set(Attribute::CrossedOut);
+        let mut s = base_style;
+        s.attributes.set(Attribute::CrossedOut);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<OverlineElem>() {
-        let mut s = base_style; s.attributes.set(Attribute::OverLined);
+        let mut s = base_style;
+        s.attributes.set(Attribute::OverLined);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<HighlightElem>() {
-        let mut s = base_style; s.background_color = Some(Color::Yellow);
+        let mut s = base_style;
+        s.background_color = Some(Color::Yellow);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<SubElem>() {
-        let mut s = base_style; s.foreground_color = Some(Color::DarkGrey);
+        let mut s = base_style;
+        s.foreground_color = Some(Color::DarkGrey);
         collect_items(&elem.body, styles, s, items, engine, config);
     } else if let Some(elem) = content.to_packed::<SuperElem>() {
-        let mut s = base_style; s.foreground_color = Some(Color::DarkGrey);
+        let mut s = base_style;
+        s.foreground_color = Some(Color::DarkGrey);
         collect_items(&elem.body, styles, s, items, engine, config);
     }
 }
@@ -233,7 +273,12 @@ fn collect_items(
 // ── Pair → InlineItem conversion ──────────────────────────────────────────────
 
 /// Convert realized [`Pair`]s into [`InlineItem`]s.
-fn collect_items_from_pairs(pairs: &[Pair], items: &mut Vec<InlineItem>) {
+fn collect_items_from_pairs(
+    pairs: &[Pair],
+    items: &mut Vec<InlineItem>,
+    engine: &mut Engine,
+    region: TermSize,
+) {
     for &(child, styles) in pairs {
         if let Some(elem) = child.to_packed::<TextElem>() {
             let text: EcoString = if let Some(case) = styles.get(TextElem::case) {
@@ -241,18 +286,32 @@ fn collect_items_from_pairs(pairs: &[Pair], items: &mut Vec<InlineItem>) {
             } else {
                 elem.text.clone()
             };
-            if text.is_empty() { continue; }
+            if text.is_empty() {
+                continue;
+            }
 
             let mut style = ContentStyle::default();
             let WeightDelta(delta) = styles.get(TextElem::delta);
-            if delta > 0 { style.attributes.set(Attribute::Bold); }
-            if styles.get(TextElem::emph).0 { style.attributes.set(Attribute::Italic); }
+            if delta > 0 {
+                style.attributes.set(Attribute::Bold);
+            }
+            if styles.get(TextElem::emph).0 {
+                style.attributes.set(Attribute::Italic);
+            }
             for deco in styles.get_cloned(TextElem::deco).iter() {
                 match &deco.line {
-                    DecoLine::Underline { .. } => { style.attributes.set(Attribute::Underlined); }
-                    DecoLine::Strikethrough { .. } => { style.attributes.set(Attribute::CrossedOut); }
-                    DecoLine::Overline { .. } => { style.attributes.set(Attribute::OverLined); }
-                    DecoLine::Highlight { .. } => { style.background_color = Some(Color::Yellow); }
+                    DecoLine::Underline { .. } => {
+                        style.attributes.set(Attribute::Underlined);
+                    }
+                    DecoLine::Strikethrough { .. } => {
+                        style.attributes.set(Attribute::CrossedOut);
+                    }
+                    DecoLine::Overline { .. } => {
+                        style.attributes.set(Attribute::OverLined);
+                    }
+                    DecoLine::Highlight { .. } => {
+                        style.background_color = Some(Color::Yellow);
+                    }
                 }
             }
             let fill = styles.get_cloned(TextElem::fill);
@@ -260,7 +319,9 @@ fn collect_items_from_pairs(pairs: &[Pair], items: &mut Vec<InlineItem>) {
                 if let Paint::Solid(c) = fill {
                     let r = c.to_linear_rgb();
                     style.foreground_color = Some(Color::Rgb {
-                        r: (r.red * 256.0) as u8, g: (r.green * 256.0) as u8, b: (r.blue * 256.0) as u8,
+                        r: (r.red * 256.0) as u8,
+                        g: (r.green * 256.0) as u8,
+                        b: (r.blue * 256.0) as u8,
                     });
                 }
             }
@@ -269,6 +330,28 @@ fn collect_items_from_pairs(pairs: &[Pair], items: &mut Vec<InlineItem>) {
             items.push(InlineItem::Space(TermScalar::ONE));
         } else if child.is::<LinebreakElem>() {
             items.push(InlineItem::Break);
+        } else if let Some(elem) = child.to_packed::<TermInlineElem>() {
+            let loc = typst::introspection::Locator::root();
+            let region = TermRegion::new(region, typst::layout::Axes::new(false, false));
+            if let Some(Ok(inline_items)) = elem
+                .cb
+                .get_ref(styles)
+                .as_ref()
+                .map(|cb| cb.call(engine, loc, styles, region))
+            {
+                for ii in inline_items {
+                    match ii {
+                        TermInlineItem::Text(t, s) => items.push(InlineItem::Text(t, s)),
+                        TermInlineItem::Frame(f) => items.push(InlineItem::Frame(f)),
+                    }
+                }
+            }
+        } else {
+            engine.sink.warn(typst::__warning!(
+                child.span(),
+                "{} was ignored during terminal layout",
+                child.elem().name()
+            ));
         }
         // Other element types are skipped in inline pair context.
     }
@@ -281,16 +364,32 @@ fn build_line_frame(items: &[InlineItem], justify: bool, available: Col) -> Term
         return TermFrame::new(TermSize::new(TermScalar::ZERO, TermScalar::ONE));
     }
 
-    let max_ascent: Row = items.iter().map(|i| i.ascent()).max().unwrap_or(TermScalar::ZERO);
-    let max_descent: Row = items.iter().map(|i| i.descent()).max().unwrap_or(TermScalar::ONE);
+    let max_ascent: Row = items
+        .iter()
+        .map(|i| i.ascent())
+        .max()
+        .unwrap_or(TermScalar::ZERO);
+    let max_descent: Row = items
+        .iter()
+        .map(|i| i.descent())
+        .max()
+        .unwrap_or(TermScalar::ONE);
     let total_rows = (max_ascent + max_descent).max(TermScalar::ONE);
     let total_cols: Col = items.iter().map(|i| i.width()).sum();
 
     let extra_space = if justify && available > total_cols && total_cols > TermScalar::ZERO {
-        let space_count = items.iter().filter(|i| matches!(i, InlineItem::Space(_))).count();
-        if space_count > 0 { (available - total_cols) / TermScalar::new(space_count as i32) }
-        else { TermScalar::ZERO }
-    } else { TermScalar::ZERO };
+        let space_count = items
+            .iter()
+            .filter(|i| matches!(i, InlineItem::Space(_)))
+            .count();
+        if space_count > 0 {
+            (available - total_cols) / TermScalar::new(space_count as i32)
+        } else {
+            TermScalar::ZERO
+        }
+    } else {
+        TermScalar::ZERO
+    };
 
     let frame_width = if justify { available } else { total_cols };
     let mut frame = TermFrame::new(TermSize::new(frame_width.max(TermScalar::ZERO), total_rows));
@@ -302,10 +401,14 @@ fn build_line_frame(items: &[InlineItem], justify: bool, available: Col) -> Term
         match item {
             InlineItem::Text(t, style) => {
                 let w = text_cols(t);
-                if w > TermScalar::ZERO { frame.push_text(TermPoint::new(x, row), t.clone(), *style); }
+                if w > TermScalar::ZERO {
+                    frame.push_text(TermPoint::new(x, row), t.clone(), *style);
+                }
                 x = x + w;
             }
-            InlineItem::Space(w) => { x = x + *w + extra_space; }
+            InlineItem::Space(w) => {
+                x = x + *w + extra_space;
+            }
             InlineItem::Frame(f) => {
                 let w = f.cols();
                 frame.push_frame(TermPoint::new(x, row), f.clone());
@@ -320,7 +423,11 @@ fn build_line_frame(items: &[InlineItem], justify: bool, available: Col) -> Term
 // ── Greedy line wrapping (shared) ─────────────────────────────────────────────
 
 /// Split [`InlineItem`]s into lines using greedy wrapping.
-fn greedy_wrap(items: Vec<InlineItem>, max_width: Col, pc: &ParaConfig) -> Vec<(Vec<InlineItem>, Col)> {
+fn greedy_wrap(
+    items: Vec<InlineItem>,
+    max_width: Col,
+    pc: &ParaConfig,
+) -> Vec<(Vec<InlineItem>, Col)> {
     let first_line_width = max_width - pc.first_line_indent;
     let rest_line_width = max_width - pc.hanging_indent;
 
@@ -329,7 +436,13 @@ fn greedy_wrap(items: Vec<InlineItem>, max_width: Col, pc: &ParaConfig) -> Vec<(
     let mut current_width: Col = TermScalar::ZERO;
     let mut line_index: usize = 0;
 
-    let effective_width = |idx: usize| if idx == 0 { first_line_width } else { rest_line_width };
+    let effective_width = |idx: usize| {
+        if idx == 0 {
+            first_line_width
+        } else {
+            rest_line_width
+        }
+    };
 
     for item in items {
         match item {
@@ -367,15 +480,29 @@ fn build_paragraph_frame(lines: Vec<(Vec<InlineItem>, Col)>, justify: bool) -> T
         return TermFrame::new(TermSize::new(TermScalar::ZERO, TermScalar::ONE));
     }
 
-    let line_frames: Vec<TermFrame> = lines.iter()
+    let line_frames: Vec<TermFrame> = lines
+        .iter()
         .map(|(l, avail)| build_line_frame(l, justify, *avail))
         .collect();
 
-    let max_cols: Col = line_frames.iter().map(|f| f.cols()).max().unwrap_or(TermScalar::ZERO);
-    let total_rows: Row = line_frames.iter().map(|f| f.rows().max(TermScalar::ONE)).sum();
-    let first_baseline = line_frames.first().map(|f| f.baseline()).unwrap_or(TermScalar::ZERO);
+    let max_cols: Col = line_frames
+        .iter()
+        .map(|f| f.cols())
+        .max()
+        .unwrap_or(TermScalar::ZERO);
+    let total_rows: Row = line_frames
+        .iter()
+        .map(|f| f.rows().max(TermScalar::ONE))
+        .sum();
+    let first_baseline = line_frames
+        .first()
+        .map(|f| f.baseline())
+        .unwrap_or(TermScalar::ZERO);
 
-    let mut out = TermFrame::new(TermSize::new(max_cols.max(TermScalar::ZERO), total_rows.max(TermScalar::ZERO)));
+    let mut out = TermFrame::new(TermSize::new(
+        max_cols.max(TermScalar::ZERO),
+        total_rows.max(TermScalar::ZERO),
+    ));
     out.set_baseline(first_baseline);
 
     let mut y: Row = TermScalar::ZERO;
@@ -396,17 +523,16 @@ fn build_paragraph_frame(lines: Vec<(Vec<InlineItem>, Col)>, justify: bool) -> T
 pub fn layout_inline<'a>(
     engine: &mut Engine,
     children: &[Pair<'a>],
-    locator: &mut SplitLocator<'a>,
+    _locator: &mut SplitLocator<'a>,
     shared: StyleChain<'a>,
     region: TermSize,
-    expand: bool,
+    _expand: bool,
 ) -> SourceResult<TermFragment> {
-    let _ = (engine, locator, expand); // kept for API compatibility
 
     let pc = para_config(shared, None);
 
     let mut items: Vec<InlineItem> = Vec::new();
-    collect_items_from_pairs(children, &mut items);
+    collect_items_from_pairs(children, &mut items, engine, region);
 
     let lines = greedy_wrap(items, region.cols, &pc);
     Ok(vec![build_paragraph_frame(lines, pc.justify)])
@@ -422,7 +548,15 @@ pub fn layout_par(
     base_style: ContentStyle,
     situation: Option<ParSituation>,
 ) -> SourceResult<TermFrame> {
-    layout_paragraph(engine, &elem.body, config, styles, base_style, situation, TermScalar::new(80))
+    layout_paragraph(
+        engine,
+        &elem.body,
+        config,
+        styles,
+        base_style,
+        situation,
+        TermScalar::new(80),
+    )
 }
 
 /// Layout inline `content` (a paragraph body or any content tree) into a
