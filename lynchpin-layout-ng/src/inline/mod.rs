@@ -47,8 +47,8 @@ use typst::text::{
 use typst::visualize::Paint;
 
 use lynchpin_library_ng::{
-    Col, Row, TermConfig, TermFragment, TermFrame, TermInlineElem, TermInlineItem, TermPoint,
-    TermRegion, TermScalar, TermSize, text_cols,
+    Col, Row, TermBlockBody, TermBlockElem, TermConfig, TermFragment, TermFrame,
+    TermInlineElem, TermInlineItem, TermPoint, TermRegion, TermScalar, TermSize, text_cols,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -188,9 +188,9 @@ fn collect_items_from_pairs(
                 if let Paint::Solid(c) = fill {
                     let r = c.to_linear_rgb();
                     style.foreground_color = Some(Color::Rgb {
-                        r: (r.red * 256.0) as u8,
-                        g: (r.green * 256.0) as u8,
-                        b: (r.blue * 256.0) as u8,
+                        r: (r.red * 255.0) as u8,
+                        g: (r.green * 255.0) as u8,
+                        b: (r.blue * 255.0) as u8,
                     });
                 }
             }
@@ -258,6 +258,32 @@ fn collect_items_from_pairs(
                 ) {
                     collect_items_from_pairs(&body_pairs, items, engine, region);
                 }
+            }
+        } else if let Some(elem) = child.to_packed::<TermBlockElem>() {
+            use typst::routines::Arenas;
+            use typst::model::DocumentInfo;
+            match elem.body.get_ref(styles) {
+                Some(TermBlockBody::Content(content)) => {
+                    let arenas = Arenas::default();
+                    if let Ok(body_pairs) = lynchpin_term_realize::realize_term(
+                        engine,
+                        &arenas,
+                        &mut DocumentInfo::default(),
+                        content,
+                        styles,
+                        lynchpin_term_realize::TermRealizationKind::Inline,
+                    ) {
+                        collect_items_from_pairs(&body_pairs, items, engine, region);
+                    }
+                }
+                Some(TermBlockBody::SingleLayouter(cb)) => {
+                    let loc = typst::introspection::Locator::root();
+                    let ter_region = TermRegion::new(region, typst::layout::Axes::new(false, false));
+                    if let Ok(frame) = cb.call(engine, loc, styles, ter_region) {
+                        items.push(InlineItem::Frame(frame));
+                    }
+                }
+                Some(TermBlockBody::MultiLayouter(_)) | None => {}
             }
         } else {
             engine.sink.warn(typst::__warning!(

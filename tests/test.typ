@@ -95,7 +95,7 @@ _斜体文字_：EmphElem → Attribute::Italic
 
 // ── 12. 行内代码 / 代码块（RawElem）───────────────────────
 // inline raw → Green，不换行；block raw → Green，前后各加换行
-行内代码：`let x = 42;`（绿色）
+行内代码：```rust let x = 42;```（绿色）
 
 代码块（block raw）：
 

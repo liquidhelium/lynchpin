@@ -760,7 +760,7 @@ fn align_y(align: Alignment, total: Row, content: Row) -> Row {
 // ── ANSI style helpers ────────────────────────────────────────────────────────
 
 fn apply_style(out: &mut String, style: &ContentStyle) {
-    let mut codes = Vec::new();
+    let mut codes: Vec<String> = Vec::new();
 
     if let Some(c) = style.foreground_color {
         push_color(&mut codes, true, c);
@@ -769,42 +769,50 @@ fn apply_style(out: &mut String, style: &ContentStyle) {
         push_color(&mut codes, false, c);
     }
     let attrs = style.attributes;
-    if attrs.has(Attribute::Bold) { codes.push("1"); }
-    if attrs.has(Attribute::Dim) { codes.push("2"); }
-    if attrs.has(Attribute::Italic) { codes.push("3"); }
-    if attrs.has(Attribute::Underlined) { codes.push("4"); }
-    if attrs.has(Attribute::SlowBlink) { codes.push("5"); }
-    if attrs.has(Attribute::RapidBlink) { codes.push("6"); }
-    if attrs.has(Attribute::Reverse) { codes.push("7"); }
-    if attrs.has(Attribute::Hidden) { codes.push("8"); }
-    if attrs.has(Attribute::CrossedOut) { codes.push("9"); }
+    if attrs.has(Attribute::Bold) { codes.push("1".to_string()); }
+    if attrs.has(Attribute::Dim) { codes.push("2".to_string()); }
+    if attrs.has(Attribute::Italic) { codes.push("3".to_string()); }
+    if attrs.has(Attribute::Underlined) { codes.push("4".to_string()); }
+    if attrs.has(Attribute::SlowBlink) { codes.push("5".to_string()); }
+    if attrs.has(Attribute::RapidBlink) { codes.push("6".to_string()); }
+    if attrs.has(Attribute::Reverse) { codes.push("7".to_string()); }
+    if attrs.has(Attribute::Hidden) { codes.push("8".to_string()); }
+    if attrs.has(Attribute::CrossedOut) { codes.push("9".to_string()); }
+    if attrs.has(Attribute::OverLined) { codes.push("53".to_string()); }
 
     if !codes.is_empty() {
         let _ = write!(out, "\x1b[{}m", codes.join(";"));
     }
 }
 
-fn push_color(codes: &mut Vec<&str>, is_fg: bool, color: Color) {
+fn push_color(codes: &mut Vec<String>, is_fg: bool, color: Color) {
     match color {
         Color::Reset => {
-            codes.push(if is_fg { "39" } else { "49" });
+            codes.push(if is_fg { "39" } else { "49" }.to_string());
         }
-        Color::Black => codes.push(if is_fg { "30" } else { "40" }),
-        Color::DarkGrey => codes.push(if is_fg { "90" } else { "100" }),
-        Color::Red => codes.push(if is_fg { "31" } else { "41" }),
-        Color::DarkRed => codes.push(if is_fg { "91" } else { "101" }),
-        Color::Green => codes.push(if is_fg { "32" } else { "42" }),
-        Color::DarkGreen => codes.push(if is_fg { "92" } else { "102" }),
-        Color::Yellow => codes.push(if is_fg { "33" } else { "43" }),
-        Color::DarkYellow => codes.push(if is_fg { "93" } else { "103" }),
-        Color::Blue => codes.push(if is_fg { "34" } else { "44" }),
-        Color::DarkBlue => codes.push(if is_fg { "94" } else { "104" }),
-        Color::Magenta => codes.push(if is_fg { "35" } else { "45" }),
-        Color::DarkMagenta => codes.push(if is_fg { "95" } else { "105" }),
-        Color::Cyan => codes.push(if is_fg { "36" } else { "46" }),
-        Color::DarkCyan => codes.push(if is_fg { "96" } else { "106" }),
-        Color::White => codes.push(if is_fg { "37" } else { "47" }),
-        Color::Grey => codes.push(if is_fg { "97" } else { "107" }),
+        Color::Black => codes.push(if is_fg { "30" } else { "40" }.to_string()),
+        Color::DarkGrey => codes.push(if is_fg { "90" } else { "100" }.to_string()),
+        Color::Red => codes.push(if is_fg { "31" } else { "41" }.to_string()),
+        Color::DarkRed => codes.push(if is_fg { "91" } else { "101" }.to_string()),
+        Color::Green => codes.push(if is_fg { "32" } else { "42" }.to_string()),
+        Color::DarkGreen => codes.push(if is_fg { "92" } else { "102" }.to_string()),
+        Color::Yellow => codes.push(if is_fg { "33" } else { "43" }.to_string()),
+        Color::DarkYellow => codes.push(if is_fg { "93" } else { "103" }.to_string()),
+        Color::Blue => codes.push(if is_fg { "34" } else { "44" }.to_string()),
+        Color::DarkBlue => codes.push(if is_fg { "94" } else { "104" }.to_string()),
+        Color::Magenta => codes.push(if is_fg { "35" } else { "45" }.to_string()),
+        Color::DarkMagenta => codes.push(if is_fg { "95" } else { "105" }.to_string()),
+        Color::Cyan => codes.push(if is_fg { "36" } else { "46" }.to_string()),
+        Color::DarkCyan => codes.push(if is_fg { "96" } else { "106" }.to_string()),
+        Color::White => codes.push(if is_fg { "37" } else { "47" }.to_string()),
+        Color::Grey => codes.push(if is_fg { "97" } else { "107" }.to_string()),
+        Color::Rgb { r, g, b } => {
+            codes.push(format!(
+                "{};2;{};{};{}",
+                if is_fg { "38" } else { "48" },
+                r, g, b
+            ));
+        }
         _ => {}
     }
 }

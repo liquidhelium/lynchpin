@@ -16,8 +16,8 @@ use typst::layout::{
 use typst::math::EquationElem;
 use typst::model::{EmphElem, StrongElem};
 use typst::model::{
-    EnumElem, FigureCaption, FigureElem, FootnoteElem, FootnoteEntry, HeadingElem, ListElem,
-    QuoteElem, RefElem, TableCell, TableElem, TermsElem,
+    EnumElem, FigureCaption, FigureElem, FootnoteElem, FootnoteEntry, HeadingElem, LinkElem,
+    ListElem, QuoteElem, RefElem, TableCell, TableElem, TermsElem,
 };
 use typst::text::{
     HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem, RawLine, ScriptKind,
@@ -25,8 +25,8 @@ use typst::text::{
     UnderlineElem, WeightDelta,
 };
 use typst::visualize::{
-    CircleElem, CurveElem, EllipseElem, ImageElem, LineElem, PathElem, PolygonElem, RectElem,
-    SquareElem,
+    CircleElem, CurveElem, EllipseElem, ImageElem, LineElem, Paint, PathElem, PolygonElem,
+    RectElem, SquareElem,
 };
 
 use lynchpin_library_ng::{
@@ -63,6 +63,7 @@ pub fn register(rules: &mut NativeRuleMap) {
     rules.register(Target::Paged, STRIKE_RULE);
     rules.register(Target::Paged, HIGHLIGHT_RULE);
     rules.register(Target::Paged, SMALLCAPS_RULE);
+    rules.register(Target::Paged, LINK_RULE);
     rules.register(Target::Paged, RAW_RULE);
     rules.register(Target::Paged, RAW_LINE_RULE);
 
@@ -112,7 +113,20 @@ const EMPH_RULE: ShowFn<EmphElem> =
 // ── Model rules ──────────────────────────────────────────────────────────────
 
 const HEADING_RULE: ShowFn<HeadingElem> = |elem, engine, styles| {
-    let mut realized = elem.body.clone();
+    let level = elem.resolve_level(styles).get() as usize;
+
+    // Apply heading styling: bold + level-based color.
+    let heading_color = match level {
+        1 => typst::visualize::Color::YELLOW,
+        2 => typst::visualize::Color::AQUA,
+        3 => typst::visualize::Color::GREEN,
+        _ => typst::visualize::Color::BLUE,
+    };
+    let mut realized = elem
+        .body
+        .clone()
+        .set(TextElem::fill, Paint::Solid(heading_color))
+        .set(TextElem::delta, WeightDelta(16));
 
     // Handle numbering if present.
     if let Some(numbering) = elem.numbering.get_ref(styles) {
@@ -420,6 +434,32 @@ const SMALLCAPS_RULE: ShowFn<SmallcapsElem> = |elem, _, _| {
         .spanned(elem.span()))
 };
 
+const LINK_RULE: ShowFn<LinkElem> = |elem, _, _| {
+    let body = elem.body.clone();
+
+    // Apply cyan foreground color via TextElem::fill.
+    let body = body.set(
+        TextElem::fill,
+        Paint::Solid(typst::visualize::Color::AQUA),
+    );
+
+    // Apply underline decoration via TextElem::deco.
+    let body = body.set(
+        TextElem::deco,
+        smallvec::smallvec![typst::text::Decoration {
+            line: typst::text::DecoLine::Underline {
+                stroke: Default::default(),
+                offset: Default::default(),
+                evade: Default::default(),
+                background: false,
+            },
+            extent: Default::default(),
+        }],
+    );
+
+    Ok(body)
+};
+
 const RAW_RULE: ShowFn<RawElem> = |elem, _, styles| {
     let lines = elem.lines.as_deref().unwrap_or_default();
 
@@ -444,15 +484,7 @@ const RAW_RULE: ShowFn<RawElem> = |elem, _, styles| {
     }
 };
 const RAW_LINE_RULE: ShowFn<RawLine> = |elem, _, _| {
-    Ok(TermBlockElem::new()
-        .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
-            elem.clone(),
-            |elem, engine, locator, styles, region| {
-                crate::flow::layout_term_frame(engine, &elem.body, locator, styles, region)
-            },
-        ))))
-        .pack()
-        .spanned(elem.span()))
+    Ok(elem.body.clone())
 };
 
 // ── Layout rules ─────────────────────────────────────────────────────────────
