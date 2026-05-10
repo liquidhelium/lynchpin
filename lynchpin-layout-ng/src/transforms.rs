@@ -30,9 +30,7 @@ pub fn layout_move(
     config: &TermConfig,
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
-    let mut frame = crate::flow::layout_term_frame(
-        engine,
-        &[(&elem.body, styles)],
+    let mut frame = crate::flow::layout_term_frame_from_content(engine,&elem.body,
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
@@ -69,9 +67,7 @@ pub fn layout_rotate(
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = elem.angle.get(styles); // rotation angle ignored
-    crate::flow::layout_term_frame(
-        engine,
-        &[(&elem.body, styles)],
+    crate::flow::layout_term_frame_from_content(engine,&elem.body,
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
@@ -92,9 +88,7 @@ pub fn layout_scale(
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = (elem.x.get(styles), elem.y.get(styles)); // scale factors ignored
-    crate::flow::layout_term_frame(
-        engine,
-        &[(&elem.body, styles)],
+    crate::flow::layout_term_frame_from_content(engine,&elem.body,
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(
@@ -115,9 +109,7 @@ pub fn layout_skew(
     styles: StyleChain,
 ) -> SourceResult<TermFrame> {
     let _ = (elem.ax.get(styles), elem.ay.get(styles)); // skew angles ignored
-    crate::flow::layout_term_frame(
-        engine,
-        &[(&elem.body, styles)],
+    crate::flow::layout_term_frame_from_content(engine,&elem.body,
         typst_library::introspection::Locator::root(),
         styles,
         TermRegion::new(

@@ -194,7 +194,7 @@ const FIGURE_CAPTION_RULE: ShowFn<FigureCaption> = |elem, engine, styles| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         move |_elem, eng, locator, st, region| {
-            crate::flow::layout_term_frame(eng, &[(&realized, st)], locator, st, region)
+            crate::flow::layout_term_frame_from_content(eng,&realized, locator, st, region)
         },
     ))))
     .pack()
@@ -205,7 +205,7 @@ const QUOTE_RULE: ShowFn<QuoteElem> = |elem, _, _| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            crate::flow::layout_term_frame(engine, &[(&elem.body, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&elem.body, locator, styles, region)
         },
     ))))
     .pack()
@@ -237,15 +237,13 @@ const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         move |_elem, eng, locator, st, region| {
-            let prefix_frame = crate::flow::layout_term_frame(
-                eng,
-                &[(&prefix, st)],
+            let prefix_frame = crate::flow::layout_term_frame_from_content(eng,&prefix,
                 locator.relayout(),
                 st,
                 region,
             )?;
             let body_frame =
-                crate::flow::layout_term_frame(eng, &[(&body, st)], locator, st, region)?;
+                crate::flow::layout_term_frame_from_content(eng,&body, locator, st, region)?;
             // Compose prefix + body horizontally.
             let prefix_cols = prefix_frame.size().cols;
             let total_cols = prefix_cols + body_frame.size().cols;
@@ -270,7 +268,7 @@ const REF_RULE: ShowFn<RefElem> = |elem, engine, styles| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         move |_elem, eng, locator, st, region| {
-            crate::flow::layout_term_frame(eng, &[(&realized, st)], locator, st, region)
+            crate::flow::layout_term_frame_from_content(eng,&realized, locator, st, region)
         },
     ))))
     .pack()
@@ -296,7 +294,7 @@ const TABLE_CELL_RULE: ShowFn<TableCell> = |elem, _, _| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            crate::flow::layout_term_frame(engine, &[(&elem.body, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&elem.body, locator, styles, region)
         },
     ))))
     .pack()
@@ -468,7 +466,7 @@ const RAW_LINE_RULE: ShowFn<RawLine> = |elem, _, _| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            crate::flow::layout_term_frame(engine, &[(&elem.body, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&elem.body, locator, styles, region)
         },
     ))))
     .pack()
@@ -481,7 +479,7 @@ const ALIGN_RULE: ShowFn<AlignElem> = |elem, _, _| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            crate::flow::layout_term_frame(engine, &[(&elem.body, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&elem.body, locator, styles, region)
         },
     ))))
     .pack()
@@ -492,9 +490,7 @@ const PAD_RULE: ShowFn<PadElem> = |elem, _, _styles| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            let mut fragment = crate::flow::layout_term_frame(
-                engine,
-                &[(&elem.body, styles)],
+            let mut fragment = crate::flow::layout_term_frame_from_content(engine,&elem.body,
                 locator,
                 styles,
                 region,
@@ -520,7 +516,7 @@ const COLUMNS_RULE: ShowFn<ColumnsElem> = |elem, _, _| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            crate::flow::layout_term_frame(engine, &[(&elem.body, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&elem.body, locator, styles, region)
         },
     ))))
     .pack()
@@ -558,7 +554,7 @@ const GRID_CELL_RULE: ShowFn<GridCell> = |elem, _, _| {
     Ok(TermBlockElem::new().with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
         elem.clone(),
         |elem, engine, locator, styles, region| {
-            crate::flow::layout_term_frame(engine, &[(&elem.body, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&elem.body, locator, styles, region)
         },
     ))))
     .pack()
@@ -659,7 +655,7 @@ const LAYOUT_RULE: ShowFn<LayoutElem> = |elem, _, _| {
                     }],
                 )?
                 .display();
-            crate::flow::layout_term_frame(engine, &[(&result, styles)], locator, styles, region)
+            crate::flow::layout_term_frame_from_content(engine,&result, locator, styles, region)
         },
     ))))
     .pack()
