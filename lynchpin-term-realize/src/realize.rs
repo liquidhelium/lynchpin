@@ -23,7 +23,7 @@ use typst::foundations::{
 };
 use typst::foundations::NativeShowRule;
 use typst::foundations::{ContextElem, TargetElem};
-use typst::introspection::TagElem;
+use typst::introspection::{Locatable, Location, Tag, TagFlags, TagElem, Tagged};
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
 use lynchpin_library_ng::TermInlineElem;
 use typst::math::{EquationElem, Mathy};
@@ -186,10 +186,10 @@ fn visit<'a>(
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<()> {
-    // Tags from an outer realize pass (e.g. inside a show rule body that went
-    // through typst's normal pipeline): silently discard them — we do not
-    // generate or consume tags in terminal realization.
+    // Tags are introspectable markers. Push them to the sink so they flow
+    // through layout into frames, making elements discoverable by query().
     if content.is::<TagElem>() {
+        s.sink.push((content, styles));
         return Ok(());
     }
 
@@ -288,9 +288,10 @@ fn visit_show_rules<'a>(
     };
 
     let mut output = Cow::Borrowed(content);
+    let mut tags = None;
 
     if !prepared {
-        prepare(
+        tags = prepare(
             s.engine,
             output.to_mut(),
             &mut map,
@@ -328,10 +329,21 @@ fn visit_show_rules<'a>(
         Cow::Owned(r) => s.store(r),
     };
 
+    // Emit start tag before recursing into the element's content.
+    let (start_tag, end_tag) = tags.unzip();
+    if let Some(start) = start_tag {
+        visit(s, s.store(TagElem::packed(start)), styles)?;
+    }
+
     s.engine.route.increase();
     s.engine.route.check_show_depth().at(content.span())?;
     visit_styled(s, realized, Cow::Owned(map), styles)?;
     s.engine.route.decrease();
+
+    // Emit end tag after recursing into the element's content.
+    if let Some(end) = end_tag {
+        visit(s, s.store(TagElem::packed(end)), styles)?;
+    }
 
     Ok(true)
 }
@@ -427,29 +439,47 @@ fn verdict<'a>(
 }
 
 /// First-time preparation of an element: applies show-set rules, synthesizes
-/// fields, and materializes the style chain into the element.
-/// Unlike typst-realize, we do **not** generate location/tag pairs.
+/// fields, materializes the style chain into the element, assigns a location,
+/// and generates `Tag::Start` / `Tag::End` pairs that make the element
+/// discoverable by `query()` and other introspection functions.
 fn prepare(
     engine: &mut Engine,
     elem: &mut Content,
     map: &mut Styles,
     styles: StyleChain,
     loc_counter: &mut u64,
-) -> SourceResult<()> {
+) -> SourceResult<Option<(Tag, Tag)>> {
     if let Some(show_settable) = elem.with::<dyn ShowSet>() {
         map.apply(show_settable.show_set(styles));
     }
     if let Some(synthesizable) = elem.with_mut::<dyn Synthesize>() {
         synthesizable.synthesize(engine, styles.chain(map))?;
     }
-    if elem.can::<dyn typst::introspection::Locatable>() {
+
+    let key = typst::utils::hash128(&*elem);
+    let flags = TagFlags {
+        introspectable: elem.can::<dyn Locatable>()
+            || elem.label().is_some()
+            || elem.location().is_some(),
+        tagged: elem.can::<dyn Tagged>(),
+    };
+    if elem.location().is_none() && flags.any() {
         *loc_counter += 1;
-        let loc = typst::introspection::Location::new(*loc_counter as u128);
+        let loc = Location::new(*loc_counter as u128);
         elem.set_location(loc);
     }
+
+    // Copy style chain fields into the element for introspection (so that
+    // `query()` results include materialized style properties).
     elem.materialize(styles.chain(map));
     elem.mark_prepared();
-    Ok(())
+
+    // Generate Tag::Start / Tag::End so the element can be found by queries.
+    let tags = elem
+        .location()
+        .map(|loc| (Tag::Start(elem.clone(), flags), Tag::End(loc, key, flags)));
+
+    Ok(tags)
 }
 
 // ── visit_styled ──────────────────────────────────────────────────────────────

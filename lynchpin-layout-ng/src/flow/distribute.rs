@@ -74,7 +74,8 @@ pub fn distribute(
         regions: regions.clone(),
         items,
         finished: Vec::new(),
-            pending_frames: Vec::new(),
+        pending_frames: Vec::new(),
+        pending_tags: Vec::new(),
         sticky: None,
         current_y: TermScalar::ZERO,
     };
@@ -91,6 +92,8 @@ struct Distributor<'x> {
     finished: Vec<TermFrame>,
     /// Frames collected in the current region, to be composed in finish_region.
     pending_frames: Vec<TermFrame>,
+    /// Tags accumulated before the current frame, to be inserted into it.
+    pending_tags: Vec<Tag>,
     /// Snapshot for rolling back sticky blocks.
     sticky: Option<DistributionSnapshot>,
     /// Current vertical cursor position within the region.
@@ -125,8 +128,8 @@ impl<'x> Distributor<'x> {
 
     fn handle_item(&mut self, item: Item<'_>) -> SourceResult<bool> {
         match item {
-            Item::Tag(_) => {
-                // Tags are attached to the next frame.
+            Item::Tag(tag) => {
+                self.pending_tags.push(tag.clone());
                 Ok(true)
             }
             Item::Abs(amount, weak) => {
@@ -207,10 +210,6 @@ impl<'x> Distributor<'x> {
     }
 
     fn finish_region(&mut self) -> SourceResult<()> {
-        if self.pending_frames.is_empty() {
-            return Ok(());
-        }
-
         if let Some(snap) = self.sticky.take() {
             self.current_y = snap.current_y;
         }
@@ -219,14 +218,27 @@ impl<'x> Distributor<'x> {
 
         let width = self.config.width;
         let frames = std::mem::take(&mut self.pending_frames);
-        let mut result = TermFrame::new(TermSize::new(width, self.current_y));
-        let mut y = TermScalar::ZERO;
-        for frame in frames {
-            let h = frame.rows().max(TermScalar::ONE);
-            result.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
-            y = y + h + TermScalar::new(1);
+        let tags = std::mem::take(&mut self.pending_tags);
+        if frames.is_empty() && tags.is_empty() {
+            return Ok(());
         }
-        result.set_rows(y);
+
+        let mut result = if frames.is_empty() {
+            TermFrame::new(TermSize::new(width, TermScalar::ZERO))
+        } else {
+            let mut result = TermFrame::new(TermSize::new(width, self.current_y));
+            let mut y = TermScalar::ZERO;
+            for frame in frames {
+                let h = frame.rows().max(TermScalar::ONE);
+                result.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
+                y = y + h + TermScalar::new(1);
+            }
+            result.set_rows(y);
+            result
+        };
+        for tag in tags {
+            result.push_tag(TermPoint::ZERO, tag);
+        }
         self.finished.push(result);
 
         Ok(())

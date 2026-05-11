@@ -103,12 +103,12 @@ pub mod compile_ng {
         )?
         .content();
 
-        let mut introspector = &empty_introspector;
-        let document;
+        let mut introspector = empty_introspector;
+        let mut document = TermDocument::default();
 
-        loop {
-            let mut subsink = Sink::new();
+        for _iter in 0..5usize {
             let constraint = comemo::Constraint::new();
+            let mut subsink = Sink::new();
             let mut engine = Engine {
                 world,
                 introspector: introspector.track_with(&constraint),
@@ -143,13 +143,36 @@ pub mod compile_ng {
                 &mut locator,
                 styles,
             )?;
-            for (_i, _page) in document.iter().enumerate() {}
 
-            introspector = &empty_introspector;
-            if constraint.validate(introspector) {
+            // Build introspector from TermFrame tags.
+            use typst::introspection::IntrospectorBuilder;
+            use std::num::NonZeroUsize;
+            use lynchpin_library_ng::TermFrameItem;
+            let mut builder = IntrospectorBuilder::new();
+            builder.pages = document.len();
+            let mut elems = Vec::new();
+            for (i, page) in document.iter().enumerate() {
+                let page_num = NonZeroUsize::new(1 + i).unwrap();
+                for (pos, item) in page.inner.items() {
+                    if let TermFrameItem::Tag(tag) = item {
+                        let position = typst::layout::Position {
+                            page: page_num,
+                            point: typst::layout::Point::new(
+                                typst::layout::Abs::pt(pos.col.get() as f64),
+                                typst::layout::Abs::pt(pos.row.get() as f64),
+                            ),
+                        };
+                        builder.discover_in_tag(&mut elems, tag, position);
+                    }
+                }
+            }
+            let new_introspector = builder.finalize(elems);
+
+            if constraint.validate(&new_introspector) {
+                introspector = new_introspector;
                 break;
             }
-            break;
+            introspector = new_introspector;
         }
 
         Ok(document)
