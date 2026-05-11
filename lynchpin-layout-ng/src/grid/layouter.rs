@@ -495,8 +495,6 @@ impl<'a> GridLayouter<'a> {
             let n_rows = rows.len();
 
             // vline_x[x]: x position of grid column boundary x (0..=n_cols).
-            // Includes all columns (content + gutter), each padded by +1 for
-            // non-gutter columns to make room for the vline.
             let mut vline_x = Vec::with_capacity(n_cols + 1);
             let mut acc = TermScalar::ZERO;
             vline_x.push(acc);
@@ -506,7 +504,7 @@ impl<'a> GridLayouter<'a> {
                       else { TermScalar::ONE };
                 vline_x.push(acc);
             }
-            let frame_width = acc + TermScalar::ONE; // rightmost vline
+            let frame_width = acc + TermScalar::ONE;
 
             // hline_y[r]: y position of row boundary r (0..=n_rows).
             let mut hline_y = Vec::with_capacity(n_rows + 1);
@@ -524,38 +522,51 @@ impl<'a> GridLayouter<'a> {
             // hline_seg[r][x]: hline at row boundary r, spanning column x.
             let mut hline_seg = vec![vec![false; n_cols]; n_rows + 1];
 
-            // vlines: at each grid column boundary, check adjacent cells.
+            // vlines: at each grid column boundary, check adjacent cells for stroke.
             for x in 0..=n_cols {
                 let left = x.checked_sub(1);
                 let right = (x < n_cols).then_some(x);
                 for (r, row) in rows.iter().enumerate() {
                     let gy = row.y;
-                    let need = left
+                    vline_seg[x][r] = left
                         .and_then(|lx| self.grid.cell(lx, gy))
-                        .map(|c| c.stroke.right.is_some())
-                        .unwrap_or(false)
+                        .map(|c| c.stroke.right.is_some()).unwrap_or(false)
                         || right
                             .and_then(|rx| self.grid.cell(rx, gy))
-                            .map(|c| c.stroke.left.is_some())
-                            .unwrap_or(false);
-                    vline_seg[x][r] = need;
+                            .map(|c| c.stroke.left.is_some()).unwrap_or(false);
+                }
+            }
+            // Propagate vlines through zero-height rows (narrow row gutters).
+            for x in 0..=n_cols {
+                for r in 0..n_rows {
+                    if hline_y[r + 1] - hline_y[r] >= TermScalar::ONE { continue; }
+                    if r > 0 {
+                        vline_seg[x][r] = vline_seg[x][r] || vline_seg[x][r - 1];
+                    }
+                    if r + 1 < n_rows {
+                        vline_seg[x][r] = vline_seg[x][r] || vline_seg[x][r + 1];
+                    }
                 }
             }
 
-            // hlines: at each row boundary, check adjacent cells.
+            // hlines: at each row boundary, check adjacent cells for stroke.
             for r in 0..=n_rows {
                 let top_gy = r.checked_sub(1).map(|i| rows[i].y);
                 let bottom_gy = rows.get(r).map(|row| row.y);
                 for x in 0..n_cols {
-                    let need = top_gy
+                    hline_seg[r][x] = top_gy
                         .and_then(|y| self.grid.cell(x, y))
-                        .map(|c| c.stroke.bottom.is_some())
-                        .unwrap_or(false)
+                        .map(|c| c.stroke.bottom.is_some()).unwrap_or(false)
                         || bottom_gy
                             .and_then(|y| self.grid.cell(x, y))
-                            .map(|c| c.stroke.top.is_some())
-                            .unwrap_or(false);
-                    hline_seg[r][x] = need;
+                            .map(|c| c.stroke.top.is_some()).unwrap_or(false);
+                }
+                // Propagate stroke through zero-width gutter columns.
+                // Narrow gutters (< 1 col) should not break hline continuity.
+                for x in 1..n_cols {
+                    if self.rcols[x] <= TermScalar::ZERO {
+                        hline_seg[r][x] = hline_seg[r][x - 1];
+                    }
                 }
             }
 
@@ -566,7 +577,9 @@ impl<'a> GridLayouter<'a> {
 
             for r in 0..=n_rows {
                 let row_y = hline_y[r];
+                if r > 0 && hline_y[r] == hline_y[r - 1] { continue; }
                 for x in 0..=n_cols {
+                    if x > 0 && vline_x[x] == vline_x[x - 1] { continue; }
                     let col_x = vline_x[x];
                     let up = r > 0 && has_line(&vline_seg, x, r - 1);
                     let down = r < n_rows && has_line(&vline_seg, x, r);
@@ -1164,8 +1177,9 @@ impl<'a> GridLayouter<'a> {
             .count();
         let vline_count = content_count + 1;
         let frame_width = self.width + TermScalar::new(vline_count as i32);
-        // +1 row for the top hline border.
-        let frame_height = height + TermScalar::ONE;
+        // +1 row for the top hline border (content rows only).
+        let is_gutter_row = self.grid.is_gutter_track(y);
+        let frame_height = if is_gutter_row { height } else { height + TermScalar::ONE };
         let mut output = TermFrame::soft(TermSize::new(frame_width, frame_height));
         let mut offset = TermPoint::ZERO;
 
