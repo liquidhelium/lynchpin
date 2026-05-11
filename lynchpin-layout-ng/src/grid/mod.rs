@@ -95,7 +95,6 @@ pub fn layout_cell(
 
     let fragment = crate::flow::layout_term_fragment(engine, layout_body, locator, styles, regions)?;
 
-
     // Manually insert tags.
     let mut frames: Vec<TermFrame> = fragment_into_frames(fragment);
     if let Some((elem, loc, key)) = tags

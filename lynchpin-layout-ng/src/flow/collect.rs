@@ -6,6 +6,7 @@
 //! element into one of the `Child` variants.  This pre-processing step
 //! makes the downstream compose/distribute pipeline much simpler.
 
+use tracing::warn;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Packed, Resolve, StyleChain};
@@ -501,6 +502,7 @@ impl<'a, 'b> MultiSpill<'a, 'b> {
     ) -> SourceResult<Vec<TermFrame>> {
         // In terminal layout, multi spills are simplified:
         // we just re-layout the block and return whatever fits.
+        warn!("MultiSpill layout is simplified in terminal layout; returning a single frame");
         let frame = self.multi.layout(engine, region)?;
         Ok(vec![frame])
     }
@@ -536,6 +538,7 @@ impl PlacedChild<'_> {
     ) -> SourceResult<TermFrame> {
         // TODO: PlacedChild should store a TermBlockElem and dispatch through
         // layout_single_block properly.
+        warn!("PlacedChild layout is not fully implemented; returning an empty frame");
         let _ = (engine, config);
         Ok(TermFrame::new(TermSize::ZERO))
     }

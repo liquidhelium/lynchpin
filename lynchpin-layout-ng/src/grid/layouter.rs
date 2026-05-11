@@ -58,20 +58,20 @@ fn fr_share(fr: Fr, total: Fr, space: TermScalar) -> TermScalar {
     TermScalar::from_f64(space.get() as f64 * ratio)
 }
 
-/// Resolve a `Rel<Length>` to `TermScalar` against a given base.
+/// Resolve a `Rel<Length>` to an integer column count.
 ///
 /// Mirrors paged `measure_columns`: the `Rel<Length>` is resolved via
 /// `resolve(styles)` → `Rel<Abs>`, then `.relative_to(base_abs)` produces
 /// the absolute column size in `Abs`.  We convert between columns and
 /// points using the font size (1 column ≈ 1 character width ≈ font size).
+/// The result is rounded to an integer to keep grid coordinates exact.
 fn resolve_rel(rel: &Rel<Length>, base: TermScalar, styles: StyleChain) -> TermScalar {
     let font_size: typst_library::layout::Abs =
         styles.get(typst_library::text::TextElem::size).0.resolve(styles);
-    // Convert the region width from columns to points.
     let base_abs = typst_library::layout::Abs::pt(base.get() as f64 * font_size.to_pt());
     let result_abs: typst_library::layout::Abs = rel.resolve(styles).relative_to(base_abs);
-    // Convert back from points to columns.
-    TermScalar::from_f64(result_abs.to_pt() / font_size.to_pt())
+    let cols = result_abs.to_pt() / font_size.to_pt();
+    TermScalar::from_f64(cols.round())
 }
 
 // ── Main structures ──────────────────────────────────────────────────────────
@@ -472,6 +472,12 @@ impl<'a> GridLayouter<'a> {
 
     /// Add lines and backgrounds.
     fn render_fills_strokes(mut self) -> SourceResult<TermFragment> {
+        eprintln!(
+            "DEBUG grid: cols={} rows={} hlines_len={} vlines_len={} has_gutter={}",
+            self.grid.cols.len(), self.grid.rows.len(),
+            self.grid.hlines.len(), self.grid.vlines.len(),
+            self.grid.has_gutter,
+        );
         let mut finished = std::mem::take(&mut self.finished);
         let finished_len = finished.len();
         for ((frame_index, frame), finished_header_rows) in finished.iter_mut().enumerate().zip(
@@ -495,9 +501,22 @@ impl<'a> GridLayouter<'a> {
                 }
             };
 
+            // Each content column contributes rcols[x] + 1 (cell + vline).
+            // Gutter columns contribute just rcols[x] (no vline).
+            let padded: Vec<TermScalar> = self
+                .rcols
+                .iter()
+                .enumerate()
+                .map(|(x, c)| {
+                    if self.grid.is_gutter_track(x) { *c }
+                    else { *c + TermScalar::ONE }
+                })
+                .collect();
+            let frame_width = self.width + TermScalar::new(self.grid.cols.len() as i32 + 1);
+
             // Render vertical lines.
-            for (x, dx) in points(self.rcols.iter().copied()).enumerate() {
-                let dx = if self.is_rtl { self.width - dx } else { dx };
+            for (x, dx) in points(padded.iter().copied()).enumerate() {
+                let dx = if self.is_rtl { frame_width - dx } else { dx };
                 let is_end_border = x == self.grid.cols.len();
                 let expected_vline_position = expected_line_position(x, is_end_border);
 
@@ -541,91 +560,34 @@ impl<'a> GridLayouter<'a> {
                 }
             }
 
-            // Render horizontal lines.
+            // Render horizontal lines at row boundaries.
+            // Check per-cell strokes: if any cell at this boundary has a
+            // top/bottom stroke, draw the hline. Table cells have default
+            // strokes; list/enum cells don't.
             let hline_offsets: Vec<TermScalar> =
                 points(rows.iter().map(|piece| piece.height)).collect();
-            let hline_indices = rows
-                .iter()
-                .map(|piece| piece.y)
-                .chain(std::iter::once(self.grid.rows.len()))
-                .enumerate();
+            let hline_style = crossterm::style::ContentStyle::default();
 
-            let in_last_region = frame_index + 1 == finished_len;
-            let last_repeated_header_end =
-                finished_header_rows.map(|info| info.last_repeated_header_end);
+            for (i, row_piece) in rows.iter().enumerate() {
+                let y = row_piece.y;
+                // Check if any cell in this row has a stroke configured.
+                let has_stroke = (0..self.grid.cols.len()).any(|x| {
+                    if self.grid.is_gutter_track(x) { return false; }
+                    self.grid.cell(x, y)
+                        .map(|c| c.stroke.top.is_some() || c.stroke.bottom.is_some())
+                        .unwrap_or(false)
+                });
 
-            for (i, (hline_index, _)) in hline_indices.clone().enumerate() {
-                let dy = *hline_offsets.get(i).unwrap_or(&TermScalar::ZERO);
+                if !has_stroke { continue; }
 
-                // Determine the local top y for this hline.
-                let local_top_y = if i == 0 { None } else { Some(rows[i - 1].y) };
-
-                let hlines_at_row = self
-                    .grid
-                    .hlines
-                    .get(if !self.grid.has_gutter {
-                        hline_index
-                    } else if hline_index == self.grid.rows.len() {
-                        hline_index / 2 + 1
-                    } else {
-                        hline_index / 2
-                    })
-                    .into_iter()
-                    .flatten()
-                    .filter(|line| {
-                        let expected = if self.grid.is_gutter_track(hline_index)
-                            && hline_index != self.grid.rows.len()
-                        {
-                            LinePosition::After
-                        } else {
-                            LinePosition::Before
-                        };
-                        line.position == expected
-                    });
-
-                let col_tracks = points(self.rcols.iter().copied());
-
-                // Map column indices to (index, offset) pairs.
-                let col_tracks: Vec<(usize, TermScalar)> = (0..self.rcols.len())
-                    .zip(col_tracks.skip(1))
-                    .map(|(c, _)| (c, self.rcols[c]))
-                    .collect();
-
-                let segments = generate_line_segments(
-                    self.grid,
-                    col_tracks.iter().map(|&(c, w)| (c, w)),
-                    0,
-                    hlines_at_row,
-                    |grid, _, track, stroke| {
-                        hline_stroke_at_column(
-                            grid,
-                            rows,
-                            local_top_y,
-                            last_repeated_header_end,
-                            in_last_region,
-                            hline_index,
-                            track,
-                            stroke,
-                        )
-                    },
-                );
-
-                let mut col_offset = TermScalar::ZERO;
-                for (seg_idx, segment) in segments.enumerate() {
-                    let LineSegment {
-                        stroke: _,
-                        offset: dx,
-                        length,
-                        priority: _,
-                    } = segment;
-                    if length > TermScalar::ZERO {
-                        let ch = '─';
-                        let style = crossterm::style::ContentStyle::default();
-                        frame.hline(TermPoint::new(dx, dy), length, ch, style);
-                    }
-                    let _ = seg_idx;
-                    col_offset = col_offset.max(dx + length);
+                let dy = hline_offsets[i];
+                // Top border: draw at the top of the first row.
+                if i == 0 {
+                    frame.hline(TermPoint::new(TermScalar::ZERO, dy), frame_width, '─', hline_style);
                 }
+                // Bottom border: draw below each row.
+                let bottom_dy = hline_offsets[i + 1];
+                frame.hline(TermPoint::new(TermScalar::ZERO, bottom_dy), frame_width, '─', hline_style);
             }
         }
 
@@ -634,45 +596,49 @@ impl<'a> GridLayouter<'a> {
 
     /// Determine all column sizes.
     fn measure_columns(&mut self, engine: &mut Engine) -> SourceResult<()> {
-        // Sum of sizes of resolved relative tracks.
         let mut rel = TermScalar::ZERO;
-
-        // Sum of fractions of all fractional tracks.
         let mut fr = Fr::zero();
+        let mut non_fr_content = 0usize;
+        let mut fr_count = 0usize;
 
-        // Resolve the size of all relative columns and compute the sum of all
-        // fractional tracks.
-        for (&col, rcol) in self.grid.cols.iter().zip(&mut self.rcols) {
+        // Resolve the size of all relative columns.  Gutter columns are
+        // fixed and do NOT get vlines — they themselves serve as spacing.
+        for (x, (&col, rcol)) in self.grid.cols.iter().zip(&mut self.rcols).enumerate() {
+            let is_gutter = self.grid.is_gutter_track(x);
             match col {
-                Sizing::Auto => {}
+                Sizing::Auto => {
+                    if !is_gutter { non_fr_content += 1; }
+                }
                 Sizing::Rel(v) => {
                     let resolved = resolve_rel(&v, self.regions.base().cols, self.styles);
                     *rcol = resolved;
                     rel = rel + resolved;
+                    if !is_gutter { non_fr_content += 1; }
                 }
-                Sizing::Fr(v) => fr += v,
+                Sizing::Fr(v) => {
+                    fr += v;
+                    fr_count += 1;
+                }
             }
         }
 
-        // Size that is not used by fixed-size columns.
-        let available = self.regions.size.cols - rel;
+        // Vlines: one per content column, plus the right border.
+        // Gutter columns don't get vlines.
+        let vline_cost = TermScalar::new((non_fr_content + 1) as i32);
+        let page_width = self.regions.size.cols;
+        let available = page_width - rel - vline_cost;
         if available >= TermScalar::ZERO {
-            // Determine size of auto columns.
             let (auto, count) = self.measure_auto_columns(engine, available)?;
 
-            // If there is remaining space, distribute it to fractional columns,
-            // otherwise shrink auto columns.
             let remaining = available - auto;
             if remaining >= TermScalar::ZERO {
-                self.grow_fractional_columns(remaining, fr);
+                self.grow_fractional_columns(remaining, fr, fr_count);
             } else {
                 self.shrink_auto_columns(available, count);
             }
         }
 
-        // Sum up the resolved column sizes once here.
         self.width = self.rcols.iter().sum();
-
         Ok(())
     }
 
@@ -763,16 +729,57 @@ impl<'a> GridLayouter<'a> {
         Ok((auto, count))
     }
 
-    /// Distribute remaining space to fractional columns.
-    fn grow_fractional_columns(&mut self, remaining: TermScalar, fr: Fr) {
-        if fr.is_zero() {
+    /// Distribute remaining space (including vlines) to fractional columns.
+    ///
+    /// Each fr column receives `cell + 1` proportional to its fraction,
+    /// then the vline column is subtracted to get the cell width.
+    /// The integer remainder is distributed to columns with the largest
+    /// fractional parts so that the total exactly equals `remaining`.
+    fn grow_fractional_columns(
+        &mut self,
+        remaining: TermScalar,
+        fr: Fr,
+        fr_count: usize,
+    ) {
+        if fr.is_zero() || fr_count == 0 {
             return;
         }
 
-        for (&col, rcol) in self.grid.cols.iter().zip(&mut self.rcols) {
-            if let Sizing::Fr(v) = col {
-                *rcol = fr_share(v, fr, remaining);
-            }
+        let total = remaining.get() as f64;
+        let total_fr = fr.get();
+
+        // Compute each fr cell+vline as floating.
+        let mut shares: Vec<(usize, f64, f64)> = self
+            .grid
+            .cols
+            .iter()
+            .enumerate()
+            .filter(|(_, col)| col.is_fractional())
+            .map(|(x, col)| {
+                let Sizing::Fr(v) = col else { unreachable!() };
+                let exact = v.get() / total_fr * total;
+                (x, exact, exact.fract())
+            })
+            .collect();
+
+        // Assign floor as the base cell+vline width.
+        let mut assigned: i32 = 0;
+        for (x, exact, _) in &shares {
+            let cell_vline = exact.floor() as i32;
+            self.rcols[*x] = TermScalar::new(cell_vline);
+            assigned += cell_vline;
+        }
+
+        // Distribute remainder (1 col each to the largest fractional parts).
+        let remainder = remaining.get() as i32 - assigned;
+        shares.sort_unstable_by(|a, b| b.2.total_cmp(&a.2));
+        for (x, _, _) in shares.iter().take(remainder.max(0) as usize) {
+            self.rcols[*x] += TermScalar::ONE;
+        }
+
+        // Subtract the vline column from each fr cell to get cell width.
+        for (x, _, _) in &shares {
+            self.rcols[*x] -= TermScalar::ONE;
         }
     }
 
@@ -1117,10 +1124,21 @@ impl<'a> GridLayouter<'a> {
             bail!(self.span, "cannot create grid with infinite height");
         }
 
-        let mut output = TermFrame::soft(TermSize::new(self.width, height));
+        // Frame includes one extra column per content column for vlines,
+        // plus one final vline.
+        // Count content columns (not gutters) for vline calculation.
+        let content_count = (0..self.grid.cols.len())
+            .filter(|&x| !self.grid.is_gutter_track(x))
+            .count();
+        let vline_count = content_count + 1;
+        let frame_width = self.width + TermScalar::new(vline_count as i32);
+        // +1 row for the top hline border.
+        let frame_height = height + TermScalar::ONE;
+        let mut output = TermFrame::soft(TermSize::new(frame_width, frame_height));
         let mut offset = TermPoint::ZERO;
 
         for (x, &rcol) in self.rcols.iter().enumerate() {
+            let is_gutter = self.grid.is_gutter_track(x);
             if let Some(cell) = self.grid.cell(x, y) {
                 // Rowspans have a separate layout step
                 if cell.rowspan.get() == 1 {
@@ -1128,9 +1146,6 @@ impl<'a> GridLayouter<'a> {
                     let size = TermSize::new(width, height);
                     let mut pod: TermRegions = TermRegion::new(size, Axes::splat(true)).into();
                     if self.grid.rows[y] == Sizing::Auto && self.unbreakable_rows_left == 0 {
-                        // Cells at breakable auto rows have lengths relative
-                        // to the entire page, unlike cells in unbreakable auto
-                        // rows.
                         pod.full = self.regions.full;
                     }
                     let locator = self.cell_locator(Axes::new(x, y), disambiguator);
@@ -1145,17 +1160,26 @@ impl<'a> GridLayouter<'a> {
                     .into_iter()
                     .next()
                     .unwrap_or_else(|| TermFrame::soft(TermSize::new(width, height)));
-                    let mut pos = offset;
+                    // Content columns: vline before cell at offset.col,
+                    // cell at offset.col + 1, offset.row + 1.
+                    let vline_pad = if is_gutter { TermScalar::ZERO } else { TermScalar::ONE };
+                    let mut pos = TermPoint::new(
+                        offset.col + vline_pad,
+                        offset.row + TermScalar::ONE,
+                    );
                     if self.is_rtl {
-                        // In RTL cells expand to the left, thus the position
-                        // must additionally be offset by the cell's width.
-                        pos.col = self.width - (pos.col + width);
+                        pos.col = frame_width - (pos.col + width);
                     }
                     output.push_frame(pos, frame);
                 }
             }
 
-            offset.col = offset.col + rcol;
+            // Gutter columns don't add a vline column.
+            if is_gutter {
+                offset.col = offset.col + rcol;
+            } else {
+                offset.col = offset.col + rcol + TermScalar::ONE;
+            }
         }
 
         Ok(output)
@@ -1170,9 +1194,10 @@ impl<'a> GridLayouter<'a> {
         y: usize,
     ) -> SourceResult<TermFragment> {
         // Prepare frames.
+        let frame_width = self.width + TermScalar::new(self.grid.cols.len() as i32 + 1);
         let mut outputs: Vec<_> = heights
             .iter()
-            .map(|&h| TermFrame::soft(TermSize::new(self.width, h)))
+            .map(|&h| TermFrame::soft(TermSize::new(frame_width, h)))
             .collect();
 
         // Prepare regions.
@@ -1206,7 +1231,7 @@ impl<'a> GridLayouter<'a> {
                             // In RTL cells expand to the left, thus the
                             // position must additionally be offset by the
                             // cell's width.
-                            pos.col = self.width - (offset.col + width);
+                            pos.col = frame_width - (offset.col + width);
                         }
                         output.push_frame(pos, frame);
                     }
@@ -1298,7 +1323,8 @@ impl<'a> GridLayouter<'a> {
 
         // Determine the size of the grid in this region, expanding fully if
         // there are fr rows.
-        let mut size = TermSize::new(self.width, used).min(self.current.initial);
+        let frame_width = self.width + TermScalar::new(self.grid.cols.len() as i32 + 1);
+        let mut size = TermSize::new(frame_width, used).min(self.current.initial);
         if fr.get() > 0.0 && self.current.initial.rows.is_finite() {
             size.rows = self.current.initial.rows;
         }
