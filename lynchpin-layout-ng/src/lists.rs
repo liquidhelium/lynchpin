@@ -24,7 +24,11 @@ fn resolve_gutter(
     if let typst_library::foundations::Smart::Custom(len) = spacing {
         len
     } else if tight {
-        styles.get(ParElem::leading)
+        // In terminal layout every character occupies exactly one row.  The
+        // paged leading (0.65 em) rounds up to 1 row, making tight lists look
+        // the same as non-tight ones.  Use zero spacing instead so tight list
+        // items appear directly adjacent, matching the user's expectation.
+        Length::zero()
     } else {
         styles.get(ParElem::spacing)
     }

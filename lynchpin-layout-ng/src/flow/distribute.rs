@@ -229,10 +229,17 @@ impl<'x> Distributor<'x> {
         } else {
             let mut result = TermFrame::new(TermSize::new(width, self.current_y));
             let mut y = TermScalar::ZERO;
-            for frame in frames {
+            let frames_len = frames.len();
+            for (i, frame) in frames.into_iter().enumerate() {
                 let h = frame.rows().max(TermScalar::ONE);
                 result.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
-                y = y + h + TermScalar::new(1);
+                y = y + h;
+                // Add one blank row between consecutive flow elements (paragraph
+                // spacing), but NOT after the last frame — that would inflate
+                // every cell body by one extra row inside grid cells.
+                if i + 1 < frames_len {
+                    y = y + TermScalar::ONE;
+                }
             }
             result.set_rows(y);
             result

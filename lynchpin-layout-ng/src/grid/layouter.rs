@@ -107,6 +107,11 @@ pub struct GridLayouter<'a> {
     pub(super) finished_header_rows: Vec<FinishedHeaderRowInfo>,
     /// Whether this is an RTL grid.
     pub(super) is_rtl: bool,
+    /// Whether any non-gutter cell in the grid has at least one explicitly set
+    /// stroke side.  When `false` (e.g. plain lists and enumerations) we skip
+    /// the extra hline-border row in `layout_single_row` so that list items
+    /// are not separated by a blank row.
+    pub(super) has_cell_strokes: bool,
     /// Currently repeating headers, one per level. Sorted by increasing
     /// levels.
     ///
@@ -300,6 +305,32 @@ impl<'a> GridLayouter<'a> {
         let initial_rows = regions.size.rows;
         let could_progress = regions.may_progress();
 
+        // Check whether any non-gutter cell carries an explicit stroke on at
+        // least one side.  Plain lists / enums have no cell strokes, so we can
+        // skip the hline-padding row that `layout_single_row` would otherwise
+        // reserve for border drawing.
+        let has_cell_strokes = {
+            let mut found = false;
+            'stroke_scan: for y in 0..grid.rows.len() {
+                if grid.is_gutter_track(y) { continue; }
+                for x in 0..grid.cols.len() {
+                    if grid.is_gutter_track(x) { continue; }
+                    if let Some(cell) = grid.cell(x, y) {
+                        let s = &cell.stroke;
+                        if s.top.is_some()
+                            || s.bottom.is_some()
+                            || s.left.is_some()
+                            || s.right.is_some()
+                        {
+                            found = true;
+                            break 'stroke_scan;
+                        }
+                    }
+                }
+            }
+            found
+        };
+
         Self {
             grid,
             regions,
@@ -313,6 +344,7 @@ impl<'a> GridLayouter<'a> {
             finished: vec![],
             finished_header_rows: vec![],
             is_rtl: styles.resolve(TextElem::dir) == Dir::RTL,
+            has_cell_strokes,
             repeating_headers: vec![],
             upcoming_headers: &grid.headers,
             pending_headers: Default::default(),
@@ -1177,9 +1209,18 @@ impl<'a> GridLayouter<'a> {
             .count();
         let vline_count = content_count + 1;
         let frame_width = self.width + TermScalar::new(vline_count as i32);
-        // +1 row for the top hline border (content rows only).
+        // Reserve one extra row at the top of each content row for drawing
+        // hline borders (intersection characters and horizontal lines).  For
+        // grids that have no cell strokes at all (lists, enumerations) this
+        // extra row would just be blank, so we skip it when `has_cell_strokes`
+        // is false.
         let is_gutter_row = self.grid.is_gutter_track(y);
-        let frame_height = if is_gutter_row { height } else { height + TermScalar::ONE };
+        let row_pad = if !is_gutter_row && self.has_cell_strokes {
+            TermScalar::ONE
+        } else {
+            TermScalar::ZERO
+        };
+        let frame_height = height + row_pad;
         let mut output = TermFrame::soft(TermSize::new(frame_width, frame_height));
         let mut offset = TermPoint::ZERO;
 
@@ -1207,11 +1248,11 @@ impl<'a> GridLayouter<'a> {
                     .next()
                     .unwrap_or_else(|| TermFrame::soft(TermSize::new(width, height)));
                     // Content columns: vline before cell at offset.col,
-                    // cell at offset.col + 1, offset.row + 1.
+                    // cell at offset.col + vline_pad, offset.row + row_pad.
                     let vline_pad = if is_gutter { TermScalar::ZERO } else { TermScalar::ONE };
                     let mut pos = TermPoint::new(
                         offset.col + vline_pad,
-                        offset.row + TermScalar::ONE,
+                        offset.row + row_pad,
                     );
                     if self.is_rtl {
                         pos.col = frame_width - (pos.col + width);
