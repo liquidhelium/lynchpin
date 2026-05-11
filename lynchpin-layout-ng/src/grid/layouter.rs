@@ -59,10 +59,19 @@ fn fr_share(fr: Fr, total: Fr, space: TermScalar) -> TermScalar {
 }
 
 /// Resolve a `Rel<Length>` to `TermScalar` against a given base.
+///
+/// Mirrors paged `measure_columns`: the `Rel<Length>` is resolved via
+/// `resolve(styles)` → `Rel<Abs>`, then `.relative_to(base_abs)` produces
+/// the absolute column size in `Abs`.  We convert between columns and
+/// points using the font size (1 column ≈ 1 character width ≈ font size).
 fn resolve_rel(rel: &Rel<Length>, base: TermScalar, styles: StyleChain) -> TermScalar {
-    let base_abs = typst_library::layout::Abs::pt(base.get() as f64);
+    let font_size: typst_library::layout::Abs =
+        styles.get(typst_library::text::TextElem::size).0.resolve(styles);
+    // Convert the region width from columns to points.
+    let base_abs = typst_library::layout::Abs::pt(base.get() as f64 * font_size.to_pt());
     let result_abs: typst_library::layout::Abs = rel.resolve(styles).relative_to(base_abs);
-    TermScalar::from_f64(result_abs.to_pt())
+    // Convert back from points to columns.
+    TermScalar::from_f64(result_abs.to_pt() / font_size.to_pt())
 }
 
 // ── Main structures ──────────────────────────────────────────────────────────
@@ -678,7 +687,7 @@ impl<'a> GridLayouter<'a> {
     fn measure_auto_columns(
         &mut self,
         engine: &mut Engine,
-        _available: TermScalar,
+        available: TermScalar,
     ) -> SourceResult<(TermScalar, usize)> {
         let mut auto = TermScalar::ZERO;
         let mut count = 0;
@@ -729,14 +738,15 @@ impl<'a> GridLayouter<'a> {
                     }
                 }
 
-                let width = self.cell_spanned_width(cell, parent.x);
-                let size = TermSize::new(width, TermScalar::INFINITY);
+                // Mirror paged: measure in the full available width, then
+                // take the actual content width as the column size.
+                let size = TermSize::new(available, TermScalar::INFINITY);
                 let pod: TermRegions = TermRegion::new(size, Axes::splat(false)).into();
 
                 let locator = self.cell_locator(parent, 0);
                 let frames = layout_cell(cell, engine, locator, self.styles, pod, false)?
                     .into_iter()
-                    .map(|frame| frame.width())
+                    .map(|frame| frame.content_width())
                     .max()
                     .unwrap_or(TermScalar::ZERO);
 

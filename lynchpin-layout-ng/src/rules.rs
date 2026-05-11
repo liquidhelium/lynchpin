@@ -17,7 +17,7 @@ use typst::math::EquationElem;
 use typst::model::{EmphElem, StrongElem};
 use typst::model::{
     EnumElem, FigureCaption, FigureElem, FootnoteElem, FootnoteEntry, HeadingElem, LinkElem,
-    ListElem, QuoteElem, RefElem, TableCell, TableElem, TermsElem,
+    ListElem, ParbreakElem, QuoteElem, RefElem, TableCell, TableElem, TermsElem,
 };
 use typst::text::{
     HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem, RawLine, ScriptKind,
@@ -32,7 +32,7 @@ use typst::visualize::{
 use lynchpin_library_ng::{
     Col, Row, TermBlockBody, TermBlockCallback, TermBlockElem, TermConfig, TermFrame,
     TermInlineCallback, TermInlineElem, TermInlineItem, TermPoint, TermRegions,
-    TermScalar, TermSize,
+    TermScalar, TermSize, fragment_into_frames,
 };
 
 /// Register terminal show rules into `rules`.
@@ -152,9 +152,9 @@ const LIST_RULE: ShowFn<ListElem> = |elem, _, _| {
         .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
             elem.clone(),
             |elem, engine, locator, styles, region| {
-                let _ = (&locator, &region);
-                let config = TermConfig::default();
-                crate::lists::layout_list(elem, engine, &config, styles)
+                let regions = TermRegions::from(region);
+                let fragment = crate::lists::layout_list(elem, engine, locator, styles, regions)?;
+                Ok(compose_frames(fragment_into_frames(fragment)))
             },
         ))))
         .pack()
@@ -166,27 +166,34 @@ const ENUM_RULE: ShowFn<EnumElem> = |elem, _, _| {
         .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
             elem.clone(),
             |elem, engine, locator, styles, region| {
-                let _ = &region;
-                let config = TermConfig::default();
-                crate::lists::layout_enum(elem, engine, locator, &config, styles)
+                let regions = TermRegions::from(region);
+                let fragment = crate::lists::layout_enum(elem, engine, locator, styles, regions)?;
+                Ok(compose_frames(fragment_into_frames(fragment)))
             },
         ))))
         .pack()
         .spanned(elem.span()))
 };
 
-const TERMS_RULE: ShowFn<TermsElem> = |elem, _, _| {
-    Ok(TermBlockElem::new()
-        .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
-            elem.clone(),
-            |elem, engine, locator, styles, region| {
-                let _ = (&locator, &region);
-                let config = TermConfig::default();
-                crate::lists::layout_terms(elem, engine, &config, styles)
-            },
-        ))))
-        .pack()
-        .spanned(elem.span()))
+const TERMS_RULE: ShowFn<TermsElem> = |elem, _, styles| {
+    let span = elem.span();
+    let tight = elem.tight.get(styles);
+    let separator = elem.separator.get_ref(styles).clone();
+
+    let mut seq = typst::ecow::EcoVec::new();
+    for child in elem.children.iter() {
+        if !seq.is_empty() {
+            seq.push(ParbreakElem::shared().clone());
+        }
+        seq.push(child.term.clone().strong());
+        seq.push(separator.clone());
+        seq.push(child.description.clone());
+        if !tight {
+            seq.push(ParbreakElem::shared().clone());
+        }
+    }
+
+    Ok(typst::foundations::Content::sequence(seq).spanned(span))
 };
 
 const FIGURE_RULE: ShowFn<FigureElem> = |elem, _, _| {
