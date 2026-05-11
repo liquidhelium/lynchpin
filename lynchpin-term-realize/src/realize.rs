@@ -21,6 +21,7 @@ use typst::foundations::{
     Content, Context, NativeElement, Packed, Recipe, RecipeIndex, SequenceElem, ShowSet,
     StyleChain, StyledElem, Styles, Synthesize, Transformation,
 };
+use typst::foundations::NativeShowRule;
 use typst::foundations::{ContextElem, TargetElem};
 use typst::introspection::TagElem;
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
@@ -174,7 +175,7 @@ struct Verdict<'a> {
 enum ShowStep<'a> {
     Recipe(&'a Recipe, RecipeIndex),
     /// Result pre-computed from a built-in show rule.
-    BuiltIn(Content),
+    BuiltIn(NativeShowRule),
 }
 
 // ── visit: the core dispatch ──────────────────────────────────────────────────
@@ -312,9 +313,12 @@ fn visit_show_rules<'a>(
                 };
                 Cow::Owned(s.engine.delay(result))
             }
-            ShowStep::BuiltIn(content) => {
-                // Built-in rule already produced the result.
-                Cow::Owned(content)
+            ShowStep::BuiltIn(rule) => {
+                let chained = styles.chain(&map);
+                let result = rule
+                    .apply(output.as_ref(), s.engine, chained)
+                    .map(|content| content.spanned(output.span()));
+                Cow::Owned(s.engine.delay(result))
             }
         };
     }
@@ -396,8 +400,7 @@ fn verdict<'a>(
     if step.is_none() {
         let target = styles.get(TargetElem::target);
         if let Some(rule) = engine.routines.rules.get(target, elem) {
-            let result = rule.apply(elem, engine, styles).ok()?;
-            step = Some(ShowStep::BuiltIn(result));
+            step = Some(ShowStep::BuiltIn(rule));
         }
     }
 

@@ -22,12 +22,17 @@ pub mod run;
 pub mod text;
 pub mod underover;
 
+use std::borrow::Cow;
+
 use lynchpin_library_ng::config::TermConfig;
 use lynchpin_library_ng::frame::{Col, TermFrame, TermSize};
 use tracing::debug;
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::foundations::{Content, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem};
+use typst::foundations::{
+    Content, ContextElem, Packed, SequenceElem, StyleChain, StyledElem, SymbolElem, TargetElem,
+};
+use typst::introspection::Locatable;
 use typst::layout::HideElem;
 use typst::layout::{BoxElem, HElem};
 use typst::math::{
@@ -63,6 +68,8 @@ pub struct TermMathContext<'cfg, 'eng, 'e> {
     pub is_display: bool,
     /// Accumulated fragments (private – mutated only through push/extend).
     fragments: Vec<TermMathFragment>,
+    /// Location counter for ContextElem preparation inside math.
+    loc_counter: u64,
 }
 
 impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
@@ -73,6 +80,7 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             config,
             is_display,
             fragments: Vec::new(),
+            loc_counter: 0,
         }
     }
 
@@ -383,6 +391,27 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
             if !frame.size().is_empty() {
                 let blank = TermFrame::new(frame.size());
                 self.push(TermMathFrameFragment::new(blank));
+            }
+            return Ok(());
+        }
+
+        // ── Context: prepare and evaluate via CONTEXT_RULE ──────────────────
+        // Math bypasses the standard realization pipeline, so we mirror what
+        // visit_show_rules does: set a location and apply the built-in rule.
+        if content.is::<ContextElem>() {
+            let mut output = Cow::Borrowed(content);
+            if !output.is_prepared() {
+                if output.can::<dyn Locatable>() && output.location().is_none() {
+                    self.loc_counter += 1;
+                    let loc = typst::introspection::Location::new(self.loc_counter as u128);
+                    output.to_mut().set_location(loc);
+                }
+                output.to_mut().mark_prepared();
+            }
+            let target = styles.get(TargetElem::target);
+            if let Some(rule) = self.engine.routines.rules.get(target, &output) {
+                let result = rule.apply(&output, self.engine, styles)?;
+                self.dispatch_element(&result, styles)?;
             }
             return Ok(());
         }
