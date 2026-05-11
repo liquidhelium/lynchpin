@@ -11,7 +11,8 @@ use typst_library::diag::{SourceResult, bail};
 use typst_library::engine::Engine;
 use typst_library::foundations::{Resolve, StyleChain};
 use typst_library::introspection::Locator;
-use typst_library::layout::grid::resolve::{Cell, CellGrid, Header, LinePosition, Repeatable};
+use typst_library::layout::grid::resolve::{Cell, CellGrid, Header, Repeatable};
+use ecow::EcoString;
 use typst_library::layout::resolve::Entry;
 use typst_library::layout::{Axes, Dir, Fr, Length, Rel, Sizing};
 use typst_library::text::TextElem;
@@ -21,8 +22,7 @@ use typst_utils::Numeric;
 use lynchpin_library_ng::*;
 
 use super::{
-    LineSegment, Rowspan, UnbreakableRowGroup, generate_line_segments, hline_stroke_at_column,
-    layout_cell, vline_stroke_at_row,
+    Rowspan, UnbreakableRowGroup, layout_cell,
 };
 
 // ── TermScalar extensions ────────────────────────────────────────────────────
@@ -472,12 +472,6 @@ impl<'a> GridLayouter<'a> {
 
     /// Add lines and backgrounds.
     fn render_fills_strokes(mut self) -> SourceResult<TermFragment> {
-        eprintln!(
-            "DEBUG grid: cols={} rows={} hlines_len={} vlines_len={} has_gutter={}",
-            self.grid.cols.len(), self.grid.rows.len(),
-            self.grid.hlines.len(), self.grid.vlines.len(),
-            self.grid.has_gutter,
-        );
         let mut finished = std::mem::take(&mut self.finished);
         let finished_len = finished.len();
         for ((frame_index, frame), finished_header_rows) in finished.iter_mut().enumerate().zip(
@@ -491,103 +485,159 @@ impl<'a> GridLayouter<'a> {
                 continue;
             }
 
-            // Render grid lines.
-            // Which line position to look for in the list of lines for a track.
-            let expected_line_position = |index, is_max_index: bool| {
-                if self.grid.is_gutter_track(index) && !is_max_index {
-                    LinePosition::After
-                } else {
-                    LinePosition::Before
-                }
-            };
-
-            // Each content column contributes rcols[x] + 1 (cell + vline).
-            // Gutter columns contribute just rcols[x] (no vline).
-            let padded: Vec<TermScalar> = self
-                .rcols
-                .iter()
-                .enumerate()
-                .map(|(x, c)| {
-                    if self.grid.is_gutter_track(x) { *c }
-                    else { *c + TermScalar::ONE }
-                })
+            // ── Collect stroke data from per-cell borders ──────────────────
+            // Content columns (non-gutter) in the full grid.
+            let content_cols: Vec<usize> = (0..self.grid.cols.len())
+                .filter(|&x| !self.grid.is_gutter_track(x))
                 .collect();
-            let frame_width = self.width + TermScalar::new(self.grid.cols.len() as i32 + 1);
+            // Content rows in the current region.
+            let content_rows: Vec<&RowPiece> = rows
+                .iter()
+                .filter(|r| !self.grid.is_gutter_track(r.y))
+                .collect();
 
-            // Render vertical lines.
-            for (x, dx) in points(padded.iter().copied()).enumerate() {
-                let dx = if self.is_rtl { frame_width - dx } else { dx };
-                let is_end_border = x == self.grid.cols.len();
-                let expected_vline_position = expected_line_position(x, is_end_border);
+            if content_cols.is_empty() || content_rows.is_empty() {
+                continue;
+            }
 
-                let vlines_at_column = self
-                    .grid
-                    .vlines
-                    .get(if !self.grid.has_gutter {
-                        x
-                    } else if is_end_border {
-                        x / 2 + 1
-                    } else {
-                        x / 2
-                    })
-                    .into_iter()
-                    .flatten()
-                    .filter(|line| line.position == expected_vline_position);
+            // vline_x[ci]: x position of content column boundary ci.
+            // ci=0 is the left border; ci=n_cb-1 is the right border.
+            let n_cb = content_cols.len() + 1;
+            let mut vline_x = Vec::with_capacity(n_cb);
+            let mut acc = TermScalar::ZERO;
+            for x in 0..self.grid.cols.len() {
+                if !self.grid.is_gutter_track(x) {
+                    vline_x.push(acc); // vline before this content column
+                }
+                acc += self.rcols[x]
+                    + if self.grid.is_gutter_track(x) { TermScalar::ZERO }
+                      else { TermScalar::ONE };
+            }
+            vline_x.push(acc); // rightmost vline
+            let frame_width = acc + TermScalar::ONE; // right-border vline
 
-                let tracks = rows.iter().map(|row| (row.y, row.height));
+            // hline_y[ri]: y position of content row boundary ri.
+            let n_rb = content_rows.len() + 1;
+            let mut hline_y = Vec::with_capacity(n_rb);
+            let mut y_acc = TermScalar::ZERO;
+            for r in rows.iter() {
+                if !self.grid.is_gutter_track(r.y) {
+                    hline_y.push(y_acc); // hline before this content row
+                }
+                y_acc += r.height;
+            }
+            hline_y.push(y_acc); // bottom border
 
-                let segments = generate_line_segments(
-                    self.grid,
-                    tracks,
-                    x,
-                    vlines_at_column,
-                    vline_stroke_at_row,
-                );
+            let style = crossterm::style::ContentStyle::default();
 
-                for segment in segments {
-                    let LineSegment {
-                        stroke: _,
-                        offset: dy,
-                        length,
-                        priority: _,
-                    } = segment;
-                    // Approximate stroke with vline using │ character.
-                    if length > TermScalar::ZERO {
-                        let ch = '│';
-                        let style = crossterm::style::ContentStyle::default();
-                        frame.vline(TermPoint::new(dx, dy), length, ch, style);
+            let n_cb = content_cols.len() + 1;
+            let n_cells = content_rows.len();
+
+            // vline_seg[ci][ri]: vline at col boundary ci, spanning row cell ri.
+            let mut vline_seg = vec![vec![false; n_cells]; n_cb];
+            // hline_seg[ri][ci]: hline at row boundary ri, spanning column ci.
+            let mut hline_seg = vec![vec![false; content_cols.len()]; n_rb];
+
+            // vlines: at content column boundaries, check adjacent cells.
+            for ci in 0..n_cb {
+                let left_col = ci.checked_sub(1).map(|i| content_cols[i]);
+                let right_col = (ci < content_cols.len()).then(|| content_cols[ci]);
+                for (ri, row) in content_rows.iter().enumerate() {
+                    let gy = row.y; // grid row index
+                    let need = left_col
+                        .and_then(|x| self.grid.cell(x, gy))
+                        .map(|c| c.stroke.right.is_some())
+                        .unwrap_or(false)
+                        || right_col
+                            .and_then(|x| self.grid.cell(x, gy))
+                            .map(|c| c.stroke.left.is_some())
+                            .unwrap_or(false);
+                    vline_seg[ci][ri] = need;
+                }
+            }
+
+            // hlines: at content row boundaries, check adjacent cells.
+            for ri in 0..n_rb {
+                let top_gy = ri.checked_sub(1)
+                    .and_then(|i| content_rows.get(i))
+                    .map(|r| r.y);
+                let bottom_gy = content_rows.get(ri).map(|r| r.y);
+                for (ci, &cx) in content_cols.iter().enumerate() {
+                    let need = top_gy
+                        .and_then(|y| self.grid.cell(cx, y))
+                        .map(|c| c.stroke.bottom.is_some())
+                        .unwrap_or(false)
+                        || bottom_gy
+                            .and_then(|y| self.grid.cell(cx, y))
+                            .map(|c| c.stroke.top.is_some())
+                            .unwrap_or(false);
+                    hline_seg[ri][ci] = need;
+                }
+            }
+
+            // ── Draw intersections (box-drawing chars) ─────────────────
+            let has_line = |v: &Vec<Vec<bool>>, ci, ri| {
+                *v.get(ci).and_then(|col: &Vec<bool>| col.get(ri)).unwrap_or(&false)
+            };
+            let has_hline = |ri, ci| has_line(&hline_seg, ri, ci);
+            let has_vline = |ci, ri| has_line(&vline_seg, ci, ri);
+
+            for ri in 0..n_rb {
+                let row_y = hline_y[ri];
+                for ci in 0..n_cb {
+                    let col_x = vline_x[ci];
+                    let up = ri > 0 && has_vline(ci, ri - 1);
+                    let down = ri < n_cells && has_vline(ci, ri);
+                    let left = ci > 0 && has_hline(ri, ci - 1);
+                    let right = ci < content_cols.len() && has_hline(ri, ci);
+
+                    let ch = match (up, down, left, right) {
+                        (false, false, false, false) => continue,
+                        (true,  true,  false, false) => '│',
+                        (false, false, true,  true ) => '─',
+                        (true,  false, true,  false) => '┘',
+                        (true,  false, false, true ) => '└',
+                        (false, true,  true,  false) => '┐',
+                        (false, true,  false, true ) => '┌',
+                        (true,  true,  true,  false) => '┤',
+                        (true,  true,  false, true ) => '├',
+                        (true,  false, true,  true ) => '┴',
+                        (false, true,  true,  true ) => '┬',
+                        (true,  true,  true,  true ) => '┼',
+                        _ => continue,
+                    };
+                    frame.push_text(TermPoint::new(col_x, row_y), EcoString::from(ch), style);
+                }
+            }
+
+            // ── Draw non-intersection vline segments ─────────────────
+            for ci in 0..n_cb {
+                let col_x = vline_x[ci];
+                for ri in 0..n_cells {
+                    if !vline_seg[ci][ri] { continue; }
+                    let y0 = hline_y[ri] + TermScalar::ONE;
+                    let y1 = hline_y[ri + 1];
+                    let mut y = y0;
+                    while y < y1 {
+                        frame.push_text(TermPoint::new(col_x, y), EcoString::from('│'), style);
+                        y += TermScalar::ONE;
                     }
                 }
             }
 
-            // Render horizontal lines at row boundaries.
-            // Check per-cell strokes: if any cell at this boundary has a
-            // top/bottom stroke, draw the hline. Table cells have default
-            // strokes; list/enum cells don't.
-            let hline_offsets: Vec<TermScalar> =
-                points(rows.iter().map(|piece| piece.height)).collect();
-            let hline_style = crossterm::style::ContentStyle::default();
-
-            for (i, row_piece) in rows.iter().enumerate() {
-                let y = row_piece.y;
-                // Check if any cell in this row has a stroke configured.
-                let has_stroke = (0..self.grid.cols.len()).any(|x| {
-                    if self.grid.is_gutter_track(x) { return false; }
-                    self.grid.cell(x, y)
-                        .map(|c| c.stroke.top.is_some() || c.stroke.bottom.is_some())
-                        .unwrap_or(false)
-                });
-
-                if !has_stroke { continue; }
-
-                let dy = hline_offsets[i];
-                // Top border: draw at the top of the first row.
-                if i == 0 {
-                    frame.hline(TermPoint::new(TermScalar::ZERO, dy), frame_width, '─', hline_style);
+            // ── Draw non-intersection hline segments ─────────────────
+            for ri in 0..n_rb {
+                let row_y = hline_y[ri];
+                for ci in 0..content_cols.len() {
+                    if !hline_seg[ri][ci] { continue; }
+                    let x0 = vline_x[ci] + TermScalar::ONE;
+                    let x1 = vline_x[ci + 1];
+                    let mut x = x0;
+                    while x < x1 {
+                        frame.push_text(TermPoint::new(x, row_y), EcoString::from('─'), style);
+                        x += TermScalar::ONE;
+                    }
                 }
-                // Bottom border: draw below each row.
-                let bottom_dy = hline_offsets[i + 1];
-                frame.hline(TermPoint::new(TermScalar::ZERO, bottom_dy), frame_width, '─', hline_style);
             }
         }
 
