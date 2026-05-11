@@ -37,6 +37,7 @@ use typst::engine::Engine;
 use typst::foundations::{Content, Packed, Resolve, StyleChain};
 use typst::introspection::SplitLocator;
 use typst::layout::FixedAlignment;
+use typst::introspection::Tag;
 use typst::layout::AlignElem;
 use typst::layout::BoxElem;
 use typst::model::ParElem;
@@ -64,6 +65,8 @@ enum InlineItem {
     Frame(TermFrame),
     /// Explicit line break — causes the current line to be flushed.
     Break,
+    /// An introspection tag at the current inline position.
+    Tag(Tag),
 }
 
 impl InlineItem {
@@ -72,7 +75,7 @@ impl InlineItem {
             InlineItem::Text(t, _) => text_cols(t),
             InlineItem::Space(w) => *w,
             InlineItem::Frame(f) => f.cols(),
-            InlineItem::Break => TermScalar::ZERO,
+            InlineItem::Break | InlineItem::Tag(_) => TermScalar::ZERO,
         }
     }
     fn ascent(&self) -> Row {
@@ -85,7 +88,7 @@ impl InlineItem {
         match self {
             InlineItem::Text(_, _) | InlineItem::Space(_) => TermScalar::ONE,
             InlineItem::Frame(f) => f.descent(),
-            InlineItem::Break => TermScalar::ZERO,
+            InlineItem::Break | InlineItem::Tag(_) => TermScalar::ZERO,
         }
     }
 }
@@ -243,6 +246,8 @@ fn collect_items_from_pairs(
                     }
                 }
             }
+        } else if let Some(elem) = child.to_packed::<typst::introspection::TagElem>() {
+            items.push(InlineItem::Tag(elem.tag.clone()));
         } else if let Some(elem) = child.to_packed::<BoxElem>() {
             use typst::routines::Arenas;
             use typst::model::DocumentInfo;
@@ -354,6 +359,9 @@ fn build_line_frame(items: &[InlineItem], justify: bool, available: Col) -> Term
                 x = x + w;
             }
             InlineItem::Break => {}
+            InlineItem::Tag(tag) => {
+                frame.push_tag(TermPoint::new(x, row), tag.clone());
+            }
         }
     }
     frame

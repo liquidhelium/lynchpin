@@ -106,7 +106,7 @@ pub mod compile_ng {
         let mut introspector = empty_introspector;
         let mut document = TermDocument::default();
 
-        for _iter in 0..5usize {
+        for iter in 0..5usize {
             let constraint = comemo::Constraint::new();
             let mut subsink = Sink::new();
             let mut engine = Engine {
@@ -147,24 +147,58 @@ pub mod compile_ng {
             // Build introspector from TermFrame tags.
             use typst::introspection::IntrospectorBuilder;
             use std::num::NonZeroUsize;
-            use lynchpin_library_ng::TermFrameItem;
+            use lynchpin_library_ng::{TermFrameItem, TermPoint};
+            use typst::foundations::Resolve;
+            let font_size: typst::layout::Abs = styles
+                .get(typst::text::TextElem::size)
+                .resolve(styles);
+            let row_to_pt = font_size.to_pt(); // 1 row ≈ font_size in pts
+            let col_to_pt = row_to_pt; // 1 col ≈ 1 char width ≈ font_size
+
             let mut builder = IntrospectorBuilder::new();
             builder.pages = document.len();
             let mut elems = Vec::new();
-            for (i, page) in document.iter().enumerate() {
-                let page_num = NonZeroUsize::new(1 + i).unwrap();
-                for (pos, item) in page.inner.items() {
-                    if let TermFrameItem::Tag(tag) = item {
-                        let position = typst::layout::Position {
-                            page: page_num,
-                            point: typst::layout::Point::new(
-                                typst::layout::Abs::pt(pos.col.get() as f64),
-                                typst::layout::Abs::pt(pos.row.get() as f64),
-                            ),
-                        };
-                        builder.discover_in_tag(&mut elems, tag, position);
+
+            fn discover_in_frame(
+                builder: &mut IntrospectorBuilder,
+                elems: &mut Vec<(typst::foundations::Content, typst::layout::Position)>,
+                frame: &lynchpin_library_ng::TermFrame,
+                page: NonZeroUsize,
+                offset: TermPoint,
+                col_to_pt: f64,
+                row_to_pt: f64,
+            ) {
+                for (pos, item) in frame.items() {
+                    let abs = *pos + offset;
+                    match item {
+                        TermFrameItem::Tag(tag) => {
+                            let position = typst::layout::Position {
+                                page,
+                                point: typst::layout::Point::new(
+                                    typst::layout::Abs::pt(abs.col.get() as f64 * col_to_pt),
+                                    typst::layout::Abs::pt(abs.row.get() as f64 * row_to_pt),
+                                ),
+                            };
+                            builder.discover_in_tag(elems, tag, position);
+                        }
+                        TermFrameItem::Frame(sub) => {
+                            discover_in_frame(builder, elems, sub, page, abs, col_to_pt, row_to_pt);
+                        }
+                        _ => {}
                     }
                 }
+            }
+
+            for (i, page) in document.iter().enumerate() {
+                discover_in_frame(
+                    &mut builder,
+                    &mut elems,
+                    &page.inner,
+                    NonZeroUsize::new(1 + i).unwrap(),
+                    TermPoint::ZERO,
+                    col_to_pt,
+                    row_to_pt,
+                );
             }
             let new_introspector = builder.finalize(elems);
 

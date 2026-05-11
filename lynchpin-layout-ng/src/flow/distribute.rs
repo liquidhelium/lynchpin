@@ -92,8 +92,9 @@ struct Distributor<'x> {
     finished: Vec<TermFrame>,
     /// Frames collected in the current region, to be composed in finish_region.
     pending_frames: Vec<TermFrame>,
-    /// Tags accumulated before the current frame, to be inserted into it.
-    pending_tags: Vec<Tag>,
+    /// Tags accumulated with their y positions, to be inserted into the
+    /// region result frame.
+    pending_tags: Vec<(Tag, Row)>,
     /// Snapshot for rolling back sticky blocks.
     sticky: Option<DistributionSnapshot>,
     /// Current vertical cursor position within the region.
@@ -129,7 +130,7 @@ impl<'x> Distributor<'x> {
     fn handle_item(&mut self, item: Item<'_>) -> SourceResult<bool> {
         match item {
             Item::Tag(tag) => {
-                self.pending_tags.push(tag.clone());
+                self.pending_tags.push((tag.clone(), self.current_y));
                 Ok(true)
             }
             Item::Abs(amount, weak) => {
@@ -236,8 +237,8 @@ impl<'x> Distributor<'x> {
             result.set_rows(y);
             result
         };
-        for tag in tags {
-            result.push_tag(TermPoint::ZERO, tag);
+        for (tag, y) in tags {
+            result.push_tag(TermPoint::new(TermScalar::ZERO, y), tag);
         }
         self.finished.push(result);
 

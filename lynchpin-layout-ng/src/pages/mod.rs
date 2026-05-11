@@ -92,8 +92,9 @@ fn layout_pages<'a>(
     // Add the remaining tags to the very end of the last page.
     if !tags.is_empty() {
         if let Some(last) = pages.last_mut() {
+            let y = last.inner.rows();
             for tag in tags.drain(..) {
-                last.inner.push_tag(TermPoint::ZERO, tag);
+                last.inner.push_tag(TermPoint::new(TermScalar::ZERO, y), tag);
             }
         }
     }

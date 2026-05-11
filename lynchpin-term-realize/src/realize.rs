@@ -73,6 +73,7 @@ pub fn realize_term<'a>(
         sink: vec![],
         groupings: ArrayVec::new(),
         may_attach: false,
+        outside: true,
         loc_counter: 1,
     };
 
@@ -102,6 +103,9 @@ struct State<'a, 'x, 'y> {
     groupings: ArrayVec<Grouping<'x>, MAX_GROUP_NESTING>,
     /// Whether "attach" spacing following the last element can survive.
     may_attach: bool,
+    /// Whether currently outside any container / show rule (for page-level
+    /// style propagation).  See paged `State::outside`.
+    outside: bool,
     loc_counter: u64,
     // (no saw_parbreak: it was set but never read — removed)
 }
@@ -335,10 +339,17 @@ fn visit_show_rules<'a>(
         visit(s, s.store(TagElem::packed(start)), styles)?;
     }
 
+    // ContextElem temporarily restricts `outside` so that styles inside
+    // context blocks don't leak to the page level (mirrors paged).
+    let prev_outside = s.outside;
+    s.outside &= !content.is::<ContextElem>();
+
     s.engine.route.increase();
     s.engine.route.check_show_depth().at(content.span())?;
     visit_styled(s, realized, Cow::Owned(map), styles)?;
     s.engine.route.decrease();
+
+    s.outside = prev_outside;
 
     // Emit end tag after recursing into the element's content.
     if let Some(end) = end_tag {
@@ -488,7 +499,7 @@ fn prepare(
 fn visit_styled<'a>(
     s: &mut State<'a, '_, '_>,
     content: &'a Content,
-    local: Cow<'a, Styles>,
+    mut local: Cow<'a, Styles>,
     outer: StyleChain<'a>,
 ) -> SourceResult<()> {
     if local.is_empty() {
@@ -506,6 +517,12 @@ fn visit_styled<'a>(
             s.info.populate_locale(&*local);
         }
         // PageElem set rules are silently ignored in terminal realization.
+    }
+
+    // Outside of containers / show rules, mark styles so they can
+    // propagate to the page level (mirrors paged).
+    if s.outside {
+        local = Cow::Owned(local.into_owned().outside());
     }
 
     // Lifetime-extend `outer` and `local` into the arena so that the chained
