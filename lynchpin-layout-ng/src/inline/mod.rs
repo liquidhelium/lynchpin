@@ -222,6 +222,7 @@ fn collect_items_from_pairs(
             let arenas = Arenas::default();
             if let Ok(body_pairs) = lynchpin_term_realize::realize_term(
                 engine,
+                &mut typst::introspection::Locator::root().split(),
                 &arenas,
                 &mut DocumentInfo::default(),
                 &elem.body,
@@ -255,6 +256,7 @@ fn collect_items_from_pairs(
             if let Some(body) = elem.body.get_ref(styles) {
                 if let Ok(body_pairs) = lynchpin_term_realize::realize_term(
                     engine,
+                    &mut typst::introspection::Locator::root().split(),
                     &arenas,
                     &mut DocumentInfo::default(),
                     body,
@@ -272,6 +274,7 @@ fn collect_items_from_pairs(
                     let arenas = Arenas::default();
                     if let Ok(body_pairs) = lynchpin_term_realize::realize_term(
                         engine,
+                        &mut typst::introspection::Locator::root().split(),
                         &arenas,
                         &mut DocumentInfo::default(),
                         content,
@@ -522,7 +525,8 @@ pub fn layout_paragraph(
     use typst::model::DocumentInfo;
     let arenas = Arenas::default();
     let children = lynchpin_term_realize::realize_term(
-        engine, &arenas, &mut DocumentInfo::default(), content, styles,
+        engine, &mut typst::introspection::Locator::root().split(),
+        &arenas, &mut DocumentInfo::default(), content, styles,
         lynchpin_term_realize::TermRealizationKind::Inline,
     )?;
 

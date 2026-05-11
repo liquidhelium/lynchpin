@@ -2,7 +2,7 @@
 //!
 //! This crate provides the complete layout pipeline for terminal output,
 //! mirroring paged layout's structure file-for-file where possible.
-
+#[allow(unused)]
 pub mod flow;
 pub mod pages;
 pub mod inline;

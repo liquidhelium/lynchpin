@@ -16,8 +16,8 @@ use typst::layout::{
 use typst::math::EquationElem;
 use typst::model::{EmphElem, StrongElem};
 use typst::model::{
-    EnumElem, FigureCaption, FigureElem, FootnoteElem, FootnoteEntry, HeadingElem, LinkElem,
-    ListElem, ParbreakElem, QuoteElem, RefElem, TableCell, TableElem, TermsElem,
+    DirectLinkElem, EnumElem, FigureCaption, FigureElem, FootnoteElem, FootnoteEntry, HeadingElem,
+    LinkElem, ListElem, ParbreakElem, QuoteElem, RefElem, TableCell, TableElem, TermsElem,
 };
 use typst::text::{
     HighlightElem, ItalicToggle, LinebreakElem, OverlineElem, RawElem, RawLine, ScriptKind,
@@ -50,6 +50,7 @@ pub fn register(rules: &mut NativeRuleMap) {
     rules.register(Target::Paged, FOOTNOTE_RULE);
     rules.register(Target::Paged, FOOTNOTE_ENTRY_RULE);
     rules.register(Target::Paged, REF_RULE);
+    rules.register(Target::Paged, DIRECT_LINK_RULE);
     rules.register(Target::Paged, TABLE_RULE);
     rules.register(Target::Paged, TABLE_CELL_RULE);
 
@@ -283,19 +284,11 @@ const FOOTNOTE_ENTRY_RULE: ShowFn<FootnoteEntry> = |elem, engine, styles| {
         .spanned(elem.span()))
 };
 
-const REF_RULE: ShowFn<RefElem> = |elem, engine, styles| {
-    let realized = elem.realize(engine, styles)?;
-    let _pw = lynchpin_library_ng::resolve_page_size(styles).cols;
-    Ok(TermBlockElem::new()
-        .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
-            elem.clone(),
-            move |_elem, eng, locator, st, region| {
-                crate::flow::layout_term_frame(eng, &realized, locator, st, region)
-            },
-        ))))
-        .pack()
-        .spanned(elem.span()))
-};
+const REF_RULE: ShowFn<RefElem> = |elem, engine, styles| elem.realize(engine, styles);
+
+/// Strip the link wrapper — terminals don't support clickable hyperlinks,
+/// so we just render the body content as plain text.
+const DIRECT_LINK_RULE: ShowFn<DirectLinkElem> = |elem, _, _| Ok(elem.body.clone());
 
 const TABLE_RULE: ShowFn<TableElem> = |elem, _, _| {
     Ok(TermBlockElem::new()

@@ -23,7 +23,7 @@ use typst::foundations::{
 };
 use typst::foundations::NativeShowRule;
 use typst::foundations::{ContextElem, TargetElem};
-use typst::introspection::{Locatable, Location, Tag, TagFlags, TagElem, Tagged};
+use typst::introspection::{Locatable, SplitLocator, Tag, TagFlags, TagElem, Tagged};
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
 use lynchpin_library_ng::TermInlineElem;
 use typst::math::{EquationElem, Mathy};
@@ -59,6 +59,7 @@ pub enum TermRealizationKind {
 /// - User-defined show rules are applied; built-in (paged/HTML) rules are not.
 pub fn realize_term<'a>(
     engine: &mut Engine,
+    locator: &mut SplitLocator,
     arenas: &'a Arenas,
     info: &mut DocumentInfo,
     content: &'a Content,
@@ -67,6 +68,7 @@ pub fn realize_term<'a>(
 ) -> SourceResult<Vec<Pair<'a>>> {
     let mut s = State {
         engine,
+        locator,
         arenas,
         info,
         kind,
@@ -74,7 +76,6 @@ pub fn realize_term<'a>(
         groupings: ArrayVec::new(),
         may_attach: false,
         outside: true,
-        loc_counter: 1,
     };
 
     visit(&mut s, content, styles)?;
@@ -92,8 +93,10 @@ pub fn realize_term<'a>(
 /// - `'a`: lifetime of the output `Pair`s (content + style chains).
 /// - `'x`: lifetime of engine / arenas borrow.
 /// - `'y`: inner lifetime of `Engine`.
-struct State<'a, 'x, 'y> {
+struct State<'a, 'x, 'y, 'z> {
     engine: &'x mut Engine<'y>,
+    /// Assigns unique locations to elements (threaded from caller).
+    locator: &'x mut SplitLocator<'z>,
     arenas: &'a Arenas,
     info: &'x mut DocumentInfo,
     kind: TermRealizationKind,
@@ -106,11 +109,10 @@ struct State<'a, 'x, 'y> {
     /// Whether currently outside any container / show rule (for page-level
     /// style propagation).  See paged `State::outside`.
     outside: bool,
-    loc_counter: u64,
     // (no saw_parbreak: it was set but never read — removed)
 }
 
-impl<'a> State<'a, '_, '_> {
+impl<'a> State<'a, '_, '_, '_> {
     /// Lifetime-extends owned content into the arena with lifetime `'a`.
     fn store(&self, content: Content) -> &'a Content {
         self.arenas.content.alloc(content)
@@ -135,7 +137,7 @@ struct GroupingRule {
     interrupt: fn(typst::foundations::Element) -> bool,
     /// Converts the accumulated `s.sink[start..]` slice into the grouped
     /// element and re-visits it.
-    finish: fn(Grouped<'_, '_, '_, '_>) -> SourceResult<()>,
+    finish: fn(Grouped<'_, '_, '_, '_, '_>) -> SourceResult<()>,
 }
 
 struct Grouping<'a> {
@@ -148,12 +150,12 @@ struct Grouping<'a> {
 }
 
 /// Provides access to the grouped slice while `finish` is executing.
-struct Grouped<'a, 'x, 'y, 's> {
-    s: &'s mut State<'a, 'x, 'y>,
+struct Grouped<'a, 'x, 'y, 'z, 's> {
+    s: &'s mut State<'a, 'x, 'y, 'z>,
     start: usize,
 }
 
-impl<'a, 'x, 'y, 's> Grouped<'a, 'x, 'y, 's> {
+impl<'a, 'x, 'y, 'z, 's> Grouped<'a, 'x, 'y, 'z, 's> {
     fn get(&self) -> &[Pair<'a>] {
         &self.s.sink[self.start..]
     }
@@ -162,7 +164,7 @@ impl<'a, 'x, 'y, 's> Grouped<'a, 'x, 'y, 's> {
     }
     /// Truncates the sink back to `start` and returns the state so that the
     /// finished element can be re-visited.
-    fn end(self) -> &'s mut State<'a, 'x, 'y> {
+    fn end(self) -> &'s mut State<'a, 'x, 'y, 'z> {
         self.s.sink.truncate(self.start);
         self.s
     }
@@ -186,7 +188,7 @@ enum ShowStep<'a> {
 
 /// Handles an arbitrary piece of content during realization.
 fn visit<'a>(
-    s: &mut State<'a, '_, '_>,
+    s: &mut State<'a, '_, '_, '_>,
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<()> {
@@ -278,7 +280,7 @@ fn visit<'a>(
 /// Tries to apply user-defined show rules and/or run element preparation.
 /// Returns `true` if the element was fully handled (need not be pushed).
 fn visit_show_rules<'a>(
-    s: &mut State<'a, '_, '_>,
+    s: &mut State<'a, '_, '_, '_>,
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
@@ -297,10 +299,10 @@ fn visit_show_rules<'a>(
     if !prepared {
         tags = prepare(
             s.engine,
+            s.locator,
             output.to_mut(),
             &mut map,
             styles,
-            &mut s.loc_counter,
         )?;
     }
 
@@ -455,10 +457,10 @@ fn verdict<'a>(
 /// discoverable by `query()` and other introspection functions.
 fn prepare(
     engine: &mut Engine,
+    locator: &mut SplitLocator,
     elem: &mut Content,
     map: &mut Styles,
     styles: StyleChain,
-    loc_counter: &mut u64,
 ) -> SourceResult<Option<(Tag, Tag)>> {
     if let Some(show_settable) = elem.with::<dyn ShowSet>() {
         map.apply(show_settable.show_set(styles));
@@ -475,8 +477,7 @@ fn prepare(
         tagged: elem.can::<dyn Tagged>(),
     };
     if elem.location().is_none() && flags.any() {
-        *loc_counter += 1;
-        let loc = Location::new(*loc_counter as u128);
+        let loc = locator.next_location(engine.introspector, key);
         elem.set_location(loc);
     }
 
@@ -497,7 +498,7 @@ fn prepare(
 
 /// Handles a block of styles applied to a child element.
 fn visit_styled<'a>(
-    s: &mut State<'a, '_, '_>,
+    s: &mut State<'a, '_, '_, '_>,
     content: &'a Content,
     mut local: Cow<'a, Styles>,
     outer: StyleChain<'a>,
@@ -546,7 +547,7 @@ fn visit_styled<'a>(
 /// Tries to add `content` to an active grouping or start a new one.
 /// Returns `true` if the element was consumed by a grouping.
 fn visit_grouping_rules<'a>(
-    s: &mut State<'a, '_, '_>,
+    s: &mut State<'a, '_, '_, '_>,
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
@@ -590,7 +591,7 @@ fn visit_grouping_rules<'a>(
 /// Filter rules: suppress elements that should not appear in the top-level
 /// output stream.
 fn visit_filter_rules<'a>(
-    s: &mut State<'a, '_, '_>,
+    s: &mut State<'a, '_, '_, '_>,
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
@@ -646,7 +647,7 @@ fn visit_filter_rules<'a>(
 /// - `sub`/`super` use custom dim-color logic (no standard typst style field).
 /// - `link` requires destination resolution; stays in `convert.rs`.
 fn visit_term_rules<'a>(
-    s: &mut State<'a, '_, '_>,
+    s: &mut State<'a, '_, '_, '_>,
     content: &'a Content,
     styles: StyleChain<'a>,
 ) -> SourceResult<bool> {
