@@ -485,111 +485,93 @@ impl<'a> GridLayouter<'a> {
                 continue;
             }
 
-            // ── Collect stroke data from per-cell borders ──────────────────
-            // Content columns (non-gutter) in the full grid.
-            let content_cols: Vec<usize> = (0..self.grid.cols.len())
-                .filter(|&x| !self.grid.is_gutter_track(x))
-                .collect();
-            // Content rows in the current region.
-            let content_rows: Vec<&RowPiece> = rows
-                .iter()
-                .filter(|r| !self.grid.is_gutter_track(r.y))
-                .collect();
+            // ── Scan per-cell stroke on all grid positions ────────────────
+            // Gutter tracks are just cells without stroke — they naturally
+            // create gaps between content cells.  We iterate over ALL grid
+            // positions; cells with stroke contribute lines, cells without
+            // (gutter or list/enum cells) contribute nothing.
 
-            if content_cols.is_empty() || content_rows.is_empty() {
-                continue;
-            }
+            let n_cols = self.grid.cols.len();
+            let n_rows = rows.len();
 
-            // vline_x[ci]: x position of content column boundary ci.
-            // ci=0 is the left border; ci=n_cb-1 is the right border.
-            let n_cb = content_cols.len() + 1;
-            let mut vline_x = Vec::with_capacity(n_cb);
+            // vline_x[x]: x position of grid column boundary x (0..=n_cols).
+            // Includes all columns (content + gutter), each padded by +1 for
+            // non-gutter columns to make room for the vline.
+            let mut vline_x = Vec::with_capacity(n_cols + 1);
             let mut acc = TermScalar::ZERO;
-            for x in 0..self.grid.cols.len() {
-                if !self.grid.is_gutter_track(x) {
-                    vline_x.push(acc); // vline before this content column
-                }
+            vline_x.push(acc);
+            for x in 0..n_cols {
                 acc += self.rcols[x]
                     + if self.grid.is_gutter_track(x) { TermScalar::ZERO }
                       else { TermScalar::ONE };
+                vline_x.push(acc);
             }
-            vline_x.push(acc); // rightmost vline
-            let frame_width = acc + TermScalar::ONE; // right-border vline
+            let frame_width = acc + TermScalar::ONE; // rightmost vline
 
-            // hline_y[ri]: y position of content row boundary ri.
-            let n_rb = content_rows.len() + 1;
-            let mut hline_y = Vec::with_capacity(n_rb);
+            // hline_y[r]: y position of row boundary r (0..=n_rows).
+            let mut hline_y = Vec::with_capacity(n_rows + 1);
             let mut y_acc = TermScalar::ZERO;
+            hline_y.push(y_acc);
             for r in rows.iter() {
-                if !self.grid.is_gutter_track(r.y) {
-                    hline_y.push(y_acc); // hline before this content row
-                }
                 y_acc += r.height;
+                hline_y.push(y_acc);
             }
-            hline_y.push(y_acc); // bottom border
 
             let style = crossterm::style::ContentStyle::default();
 
-            let n_cb = content_cols.len() + 1;
-            let n_cells = content_rows.len();
+            // vline_seg[x][r]: vline at col boundary x, spanning row r.
+            let mut vline_seg = vec![vec![false; n_rows]; n_cols + 1];
+            // hline_seg[r][x]: hline at row boundary r, spanning column x.
+            let mut hline_seg = vec![vec![false; n_cols]; n_rows + 1];
 
-            // vline_seg[ci][ri]: vline at col boundary ci, spanning row cell ri.
-            let mut vline_seg = vec![vec![false; n_cells]; n_cb];
-            // hline_seg[ri][ci]: hline at row boundary ri, spanning column ci.
-            let mut hline_seg = vec![vec![false; content_cols.len()]; n_rb];
-
-            // vlines: at content column boundaries, check adjacent cells.
-            for ci in 0..n_cb {
-                let left_col = ci.checked_sub(1).map(|i| content_cols[i]);
-                let right_col = (ci < content_cols.len()).then(|| content_cols[ci]);
-                for (ri, row) in content_rows.iter().enumerate() {
-                    let gy = row.y; // grid row index
-                    let need = left_col
-                        .and_then(|x| self.grid.cell(x, gy))
+            // vlines: at each grid column boundary, check adjacent cells.
+            for x in 0..=n_cols {
+                let left = x.checked_sub(1);
+                let right = (x < n_cols).then_some(x);
+                for (r, row) in rows.iter().enumerate() {
+                    let gy = row.y;
+                    let need = left
+                        .and_then(|lx| self.grid.cell(lx, gy))
                         .map(|c| c.stroke.right.is_some())
                         .unwrap_or(false)
-                        || right_col
-                            .and_then(|x| self.grid.cell(x, gy))
+                        || right
+                            .and_then(|rx| self.grid.cell(rx, gy))
                             .map(|c| c.stroke.left.is_some())
                             .unwrap_or(false);
-                    vline_seg[ci][ri] = need;
+                    vline_seg[x][r] = need;
                 }
             }
 
-            // hlines: at content row boundaries, check adjacent cells.
-            for ri in 0..n_rb {
-                let top_gy = ri.checked_sub(1)
-                    .and_then(|i| content_rows.get(i))
-                    .map(|r| r.y);
-                let bottom_gy = content_rows.get(ri).map(|r| r.y);
-                for (ci, &cx) in content_cols.iter().enumerate() {
+            // hlines: at each row boundary, check adjacent cells.
+            for r in 0..=n_rows {
+                let top_gy = r.checked_sub(1).map(|i| rows[i].y);
+                let bottom_gy = rows.get(r).map(|row| row.y);
+                for x in 0..n_cols {
                     let need = top_gy
-                        .and_then(|y| self.grid.cell(cx, y))
+                        .and_then(|y| self.grid.cell(x, y))
                         .map(|c| c.stroke.bottom.is_some())
                         .unwrap_or(false)
                         || bottom_gy
-                            .and_then(|y| self.grid.cell(cx, y))
+                            .and_then(|y| self.grid.cell(x, y))
                             .map(|c| c.stroke.top.is_some())
                             .unwrap_or(false);
-                    hline_seg[ri][ci] = need;
+                    hline_seg[r][x] = need;
                 }
             }
 
             // ── Draw intersections (box-drawing chars) ─────────────────
-            let has_line = |v: &Vec<Vec<bool>>, ci, ri| {
-                *v.get(ci).and_then(|col: &Vec<bool>| col.get(ri)).unwrap_or(&false)
+            let has_line = |v: &Vec<Vec<bool>>, a, b| {
+                *v.get(a).and_then(|row: &Vec<bool>| row.get(b)).unwrap_or(&false)
             };
-            let has_hline = |ri, ci| has_line(&hline_seg, ri, ci);
-            let has_vline = |ci, ri| has_line(&vline_seg, ci, ri);
 
-            for ri in 0..n_rb {
-                let row_y = hline_y[ri];
-                for ci in 0..n_cb {
-                    let col_x = vline_x[ci];
-                    let up = ri > 0 && has_vline(ci, ri - 1);
-                    let down = ri < n_cells && has_vline(ci, ri);
-                    let left = ci > 0 && has_hline(ri, ci - 1);
-                    let right = ci < content_cols.len() && has_hline(ri, ci);
+            for r in 0..=n_rows {
+                let row_y = hline_y[r];
+                for x in 0..=n_cols {
+                    let col_x = vline_x[x];
+                    let up = r > 0 && has_line(&vline_seg, x, r - 1);
+                    let down = r < n_rows && has_line(&vline_seg, x, r);
+                    let left = x > 0 && has_line(&hline_seg, r, x - 1);
+                    let right = x < n_cols && has_line(&hline_seg, r, x);
 
                     let ch = match (up, down, left, right) {
                         (false, false, false, false) => continue,
@@ -611,12 +593,12 @@ impl<'a> GridLayouter<'a> {
             }
 
             // ── Draw non-intersection vline segments ─────────────────
-            for ci in 0..n_cb {
-                let col_x = vline_x[ci];
-                for ri in 0..n_cells {
-                    if !vline_seg[ci][ri] { continue; }
-                    let y0 = hline_y[ri] + TermScalar::ONE;
-                    let y1 = hline_y[ri + 1];
+            for x in 0..=n_cols {
+                let col_x = vline_x[x];
+                for r in 0..n_rows {
+                    if !vline_seg[x][r] { continue; }
+                    let y0 = hline_y[r] + TermScalar::ONE;
+                    let y1 = hline_y[r + 1];
                     let mut y = y0;
                     while y < y1 {
                         frame.push_text(TermPoint::new(col_x, y), EcoString::from('│'), style);
@@ -626,16 +608,16 @@ impl<'a> GridLayouter<'a> {
             }
 
             // ── Draw non-intersection hline segments ─────────────────
-            for ri in 0..n_rb {
-                let row_y = hline_y[ri];
-                for ci in 0..content_cols.len() {
-                    if !hline_seg[ri][ci] { continue; }
-                    let x0 = vline_x[ci] + TermScalar::ONE;
-                    let x1 = vline_x[ci + 1];
-                    let mut x = x0;
-                    while x < x1 {
-                        frame.push_text(TermPoint::new(x, row_y), EcoString::from('─'), style);
-                        x += TermScalar::ONE;
+            for r in 0..=n_rows {
+                let row_y = hline_y[r];
+                for x in 0..n_cols {
+                    if !hline_seg[r][x] { continue; }
+                    let x0 = vline_x[x] + TermScalar::ONE;
+                    let x1 = vline_x[x + 1];
+                    let mut cx = x0;
+                    while cx < x1 {
+                        frame.push_text(TermPoint::new(cx, row_y), EcoString::from('─'), style);
+                        cx += TermScalar::ONE;
                     }
                 }
             }
