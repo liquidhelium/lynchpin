@@ -166,9 +166,9 @@ const ENUM_RULE: ShowFn<EnumElem> = |elem, _, _| {
         .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
             elem.clone(),
             |elem, engine, locator, styles, region| {
-                let _ = (&locator, &region);
+                let _ = &region;
                 let config = TermConfig::default();
-                crate::lists::layout_enum(elem, engine, &config, styles)
+                crate::lists::layout_enum(elem, engine, locator, &config, styles)
             },
         ))))
         .pack()

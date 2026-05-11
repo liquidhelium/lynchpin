@@ -333,6 +333,20 @@ impl TermFrame {
         self.baseline
     }
 
+    /// The width of actual content in this frame (ignoring declared frame size).
+    pub fn content_width(&self) -> Col {
+        self.items
+            .iter()
+            .map(|(pos, item)| match item {
+                TermFrameItem::Text(t, _) => pos.col + text_cols(t),
+                TermFrameItem::Frame(f) => pos.col + f.content_width(),
+                TermFrameItem::Rule { width, .. } => pos.col + *width,
+                TermFrameItem::Shape(_) | TermFrameItem::Image(_) | TermFrameItem::Tag(_) => pos.col,
+            })
+            .max()
+            .unwrap_or(TermScalar::ZERO)
+    }
+
     #[inline]
     pub fn ascent(&self) -> Row {
         self.baseline

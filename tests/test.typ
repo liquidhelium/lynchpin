@@ -15,6 +15,8 @@
 
 // ── 1. 标题（Heading）─────────────────────────────────────
 // level 1 → Yellow + Bold
+//
+#set heading(numbering: "1.")
 = the first level
 
 // level 2 → Cyan + Bold
