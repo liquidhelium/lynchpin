@@ -112,8 +112,8 @@ pub fn resolve_page_size(styles: StyleChain) -> TermSize {
     let cols = if page_width != Abs::inf() {
         TermScalar::from_f64((page_width / font_size).round().max(1.0))
     } else {
-        // When page width is auto, default to 80 columns.
-        TermScalar::new(80)
+        // Page width is auto: use unbounded so layout shrink-wraps to content.
+        TermScalar::INFINITY
     };
 
     let rows = if page_height != Abs::inf() {

@@ -338,7 +338,7 @@ fn build_line_frame(items: &[InlineItem], justify: bool, available: Col) -> Term
         TermScalar::ZERO
     };
 
-    let frame_width = if justify { available } else { total_cols };
+    let frame_width = if justify && available.is_finite() { available } else { total_cols };
     let mut frame = TermFrame::new(TermSize::new(frame_width.max(TermScalar::ZERO), total_rows));
     frame.set_baseline(max_ascent);
 

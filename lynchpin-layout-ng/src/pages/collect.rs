@@ -50,9 +50,11 @@ pub fn collect<'a>(
                 items.push(Item::Parity(parity, styles, locator));
             }
 
-            if !pagebreak.boundary.get(styles) {
-                initial = styles;
-            }
+            // Update the initial styles for the next page run.
+            // This must happen for *both* boundary breaks (from `#set page(...)`) and
+            // explicit breaks so that page-level settings such as `width` are picked
+            // up by subsequent runs.
+            initial = styles;
 
             staged_empty_page |= strong;
             children = &mut children[1..];
@@ -84,7 +86,12 @@ pub fn collect<'a>(
             }
 
             let locator = locator.next(&elem.span());
-            items.push(Item::Run(group, initial, locator));
+            // Use the styles of the first content element in the run.
+            // `initial` only holds base library styles because the terminal
+            // realizer never emits a `PagebreakElem` for `#set page(...)` —
+            // those settings live in the StyleChain of the content pairs.
+            let run_initial = group.first().map(|&(_, s)| s).unwrap_or(initial);
+            items.push(Item::Run(group, run_initial, locator));
             staged_empty_page = false;
         }
     }

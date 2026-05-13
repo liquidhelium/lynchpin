@@ -224,10 +224,22 @@ impl<'x> Distributor<'x> {
             return Ok(());
         }
 
-        let mut result = if frames.is_empty() {
-            TermFrame::new(TermSize::new(width, TermScalar::ZERO))
+        // When the configured width is infinite (auto page width), shrink-wrap
+        // to the widest sub-frame rather than creating an infinitely-wide grid.
+        let effective_width = if width.is_finite() {
+            width
         } else {
-            let mut result = TermFrame::new(TermSize::new(width, self.current_y));
+            frames
+                .iter()
+                .map(|f| f.cols())
+                .max()
+                .unwrap_or(TermScalar::ZERO)
+        };
+
+        let mut result = if frames.is_empty() {
+            TermFrame::new(TermSize::new(effective_width, TermScalar::ZERO))
+        } else {
+            let mut result = TermFrame::new(TermSize::new(effective_width, self.current_y));
             let mut y = TermScalar::ZERO;
             let frames_len = frames.len();
             for (i, frame) in frames.into_iter().enumerate() {
