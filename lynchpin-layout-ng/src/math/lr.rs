@@ -459,13 +459,14 @@ fn floor_left(mode: RenderMode, height: Row) -> Vec<char> {
     if mode.is_unicode() {
         match h {
             1 => vec!['⌊'],
-            2 => vec!['⌊', '⌊'],
+            2 => vec!['│', '└'],
             _ => {
                 let mut v = Vec::with_capacity(h);
-                for _ in 0..h - 1 {
+                v.push('╷');
+                for _ in 1..h - 1 {
                     v.push('⎢');
                 }
-                v.push('⌊');
+                v.push('└');
                 v
             }
         }
@@ -489,13 +490,14 @@ fn floor_right(mode: RenderMode, height: Row) -> Vec<char> {
     if mode.is_unicode() {
         match h {
             1 => vec!['⌋'],
-            2 => vec!['⌋', '⌋'],
+            2 => vec!['│', '┘'],
             _ => {
                 let mut v = Vec::with_capacity(h);
+                v.push('╷');
                 for _ in 0..h - 1 {
-                    v.push('⎥');
+                    v.push('│');
                 }
-                v.push('⌋');
+                v.push('┘');
                 v
             }
         }
@@ -519,13 +521,14 @@ fn ceil_left(mode: RenderMode, height: Row) -> Vec<char> {
     if mode.is_unicode() {
         match h {
             1 => vec!['⌈'],
-            2 => vec!['⌈', '⌈'],
+            2 => vec!['┌', '│'],
             _ => {
                 let mut v = Vec::with_capacity(h);
-                v.push('⌈');
-                for _ in 0..h - 1 {
-                    v.push('⎢');
+                v.push('┌');
+                for _ in 0..h - 2 {
+                    v.push('│');
                 }
+                v.push('╵');
                 v
             }
         }
@@ -549,13 +552,14 @@ fn ceil_right(mode: RenderMode, height: Row) -> Vec<char> {
     if mode.is_unicode() {
         match h {
             1 => vec!['⌉'],
-            2 => vec!['⌉', '⌉'],
+            2 => vec!['┐', '│'],
             _ => {
                 let mut v = Vec::with_capacity(h);
-                v.push('⌉');
-                for _ in 0..h - 1 {
-                    v.push('⎥');
+                v.push('┐');
+                for _ in 0..h - 2 {
+                    v.push('│');
                 }
+                v.push('╵');
                 v
             }
         }
