@@ -3,13 +3,16 @@
 //! Handles [`AttachElem`], [`PrimesElem`], [`ScriptsElem`], and
 //! [`LimitsElem`].
 
-use lynchpin_library_ng::frame::{Col, Row, TermFrame, TermPoint, TermSize};
+use crossterm::style::ContentStyle;
+use ecow::EcoString;
+use lynchpin_library_ng::frame::{Col, Row, TermFrame, TermPoint, TermSize, char_cols};
 use typst::diag::SourceResult;
 use typst::foundations::{Content, Packed, Resolve, StyleChain, SymbolElem};
 use typst::math::{AttachElem, LimitsElem, PrimesElem, ScriptsElem, StretchElem};
 
 use super::fragment::{make_text_frame, TermLimits, TermMathFragment, TermMathFrameFragment};
 use super::run::{compose_horizontal, compose_vertical, pad_h};
+use super::unicode_scripts;
 use super::TermMathContext;
 
 // ── layout_attach ─────────────────────────────────────────────────────────────
@@ -280,6 +283,29 @@ fn build_pre_scripts(
     let tl_frame = tl.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
     let bl_frame = bl.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
 
+    // ── Unicode inline conversion (same conditions as post-scripts) ─────────
+    if ctx.config.mode.is_unicode() {
+        if let (Some(tf), None) = (&tl_frame, &bl_frame) {
+            if tf.rows() == Row::new(1) {
+                if let Some(s) = unicode_scripts::frame_to_superscript(tf) {
+                    return Ok(Some(build_inline_script_frame(
+                        &s, base_rows, base_baseline,
+                    )));
+                }
+            }
+        }
+        if let (None, Some(bf)) = (&tl_frame, &bl_frame) {
+            if bf.rows() == Row::new(1) {
+                if let Some(s) = unicode_scripts::frame_to_subscript(bf) {
+                    return Ok(Some(build_inline_script_frame(
+                        &s, base_rows, base_baseline,
+                    )));
+                }
+            }
+        }
+    }
+    // ───────────────────────────────────────────────────────────────────
+
     let script_cols: Col = tl_frame
         .as_ref()
         .map(|f| f.cols())
@@ -339,6 +365,37 @@ fn build_post_scripts_with_ic(
     }
     let tr_frame = tr.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
     let br_frame = br.map(|c| ctx.layout_into_frame(c, styles)).transpose()?;
+
+    // ── Unicode inline conversion ─────────────────────────────────────────
+    // Conditions (all must hold):
+    //  1. Left/right script — already guaranteed here (not limits mode)
+    //  2. Exactly one side has a script (not both tr and br)
+    //  3. That script's frame is exactly 1 row tall
+    //  4. Unicode rendering mode is active
+    //  5. Every character in the frame has a Unicode superscript/subscript form
+    if ctx.config.mode.is_unicode() {
+        // Only superscript (tr), no subscript (br)
+        if let (Some(tf), None) = (&tr_frame, &br_frame) {
+            if tf.rows() == Row::new(1) {
+                if let Some(s) = unicode_scripts::frame_to_superscript(tf) {
+                    return Ok(Some(build_inline_script_frame(
+                        &s, base_rows, base_baseline,
+                    )));
+                }
+            }
+        }
+        // Only subscript (br), no superscript (tr)
+        if let (None, Some(bf)) = (&tr_frame, &br_frame) {
+            if bf.rows() == Row::new(1) {
+                if let Some(s) = unicode_scripts::frame_to_subscript(bf) {
+                    return Ok(Some(build_inline_script_frame(
+                        &s, base_rows, base_baseline,
+                    )));
+                }
+            }
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     let script_cols: Col = tr_frame
         .as_ref()
@@ -404,6 +461,32 @@ fn assemble_with_pre_post(
     }
 
     compose_horizontal(parts, Col::ZERO)
+}
+
+// ── Inline Unicode script frame ───────────────────────────────────────────────
+
+/// Build a script frame that lives on the *same* baseline row as the base.
+///
+/// Used when all script characters have been converted to Unicode
+/// superscript/subscript equivalents.  The resulting frame:
+/// - Has the same height and baseline as the base element, so
+///   [`assemble_with_pre_post`] places it without shifting the base.
+/// - Contains the converted text at the baseline row.
+fn build_inline_script_frame(text: &str, base_rows: Row, base_baseline: Row) -> TermFrame {
+    let cols: Col = text
+        .chars()
+        .map(|ch| char_cols(ch))
+        .fold(Col::ZERO, |acc, w| acc + w)
+        .max(Col::ZERO);
+    let rows = base_rows.max(Row::new(1));
+    let mut frame = TermFrame::new(TermSize::new(cols, rows));
+    frame.set_baseline(base_baseline);
+    frame.push_text(
+        TermPoint::new(Col::ZERO, base_baseline),
+        EcoString::from(text),
+        ContentStyle::default(),
+    );
+    frame
 }
 
 // ── layout_primes ─────────────────────────────────────────────────────────────

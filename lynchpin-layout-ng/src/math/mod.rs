@@ -21,6 +21,7 @@ pub mod root;
 pub mod run;
 pub mod text;
 pub mod underover;
+pub mod unicode_scripts;
 
 use std::borrow::Cow;
 
