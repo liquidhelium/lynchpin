@@ -285,22 +285,35 @@ fn build_pre_scripts(
 
     // ── Unicode inline conversion (same conditions as post-scripts) ─────────
     if ctx.config.mode.is_unicode() {
-        if let (Some(tf), None) = (&tl_frame, &bl_frame) {
-            if tf.rows() == Row::new(1) {
-                if let Some(s) = unicode_scripts::frame_to_superscript(tf) {
-                    return Ok(Some(build_inline_script_frame(
-                        &s, base_rows, base_baseline,
-                    )));
+        let has_both = tl_frame.is_some() && bl_frame.is_some();
+        let both_allowed = base_rows >= Row::new(2);
+
+        if !has_both || both_allowed {
+            let super_str = tl_frame.as_ref().and_then(|tf| {
+                if tf.rows() == Row::new(1) {
+                    unicode_scripts::frame_to_superscript(tf)
+                } else {
+                    None
                 }
-            }
-        }
-        if let (None, Some(bf)) = (&tl_frame, &bl_frame) {
-            if bf.rows() == Row::new(1) {
-                if let Some(s) = unicode_scripts::frame_to_subscript(bf) {
-                    return Ok(Some(build_inline_script_frame(
-                        &s, base_rows, base_baseline,
-                    )));
+            });
+            let sub_str = bl_frame.as_ref().and_then(|bf| {
+                if bf.rows() == Row::new(1) {
+                    unicode_scripts::frame_to_subscript(bf)
+                } else {
+                    None
                 }
+            });
+
+            let tl_ok = tl_frame.is_none() || super_str.is_some();
+            let bl_ok = bl_frame.is_none() || sub_str.is_some();
+
+            if tl_ok && bl_ok && (super_str.is_some() || sub_str.is_some()) {
+                return Ok(Some(build_inline_script_frame(
+                    super_str.as_deref(),
+                    sub_str.as_deref(),
+                    base_rows,
+                    base_baseline,
+                )));
             }
         }
     }
@@ -369,29 +382,43 @@ fn build_post_scripts_with_ic(
     // ── Unicode inline conversion ─────────────────────────────────────────
     // Conditions (all must hold):
     //  1. Left/right script — already guaranteed here (not limits mode)
-    //  2. Exactly one side has a script (not both tr and br)
-    //  3. That script's frame is exactly 1 row tall
-    //  4. Unicode rendering mode is active
-    //  5. Every character in the frame has a Unicode superscript/subscript form
+    //  2. If both tr and br exist: base must be ≥2 rows tall
+    //     If only one side exists: any base height is fine
+    //  3. Each side’s frame must be exactly 1 row
+    //  4. Unicode rendering mode
+    //  5. Every character on that side has a Unicode super/subscript form
+    //  6. ALL existing sides must succeed (no partial inline conversion)
     if ctx.config.mode.is_unicode() {
-        // Only superscript (tr), no subscript (br)
-        if let (Some(tf), None) = (&tr_frame, &br_frame) {
-            if tf.rows() == Row::new(1) {
-                if let Some(s) = unicode_scripts::frame_to_superscript(tf) {
-                    return Ok(Some(build_inline_script_frame(
-                        &s, base_rows, base_baseline,
-                    )));
+        let has_both = tr_frame.is_some() && br_frame.is_some();
+        let both_allowed = base_rows >= Row::new(2);
+
+        if !has_both || both_allowed {
+            let super_str = tr_frame.as_ref().and_then(|tf| {
+                if tf.rows() == Row::new(1) {
+                    unicode_scripts::frame_to_superscript(tf)
+                } else {
+                    None
                 }
-            }
-        }
-        // Only subscript (br), no superscript (tr)
-        if let (None, Some(bf)) = (&tr_frame, &br_frame) {
-            if bf.rows() == Row::new(1) {
-                if let Some(s) = unicode_scripts::frame_to_subscript(bf) {
-                    return Ok(Some(build_inline_script_frame(
-                        &s, base_rows, base_baseline,
-                    )));
+            });
+            let sub_str = br_frame.as_ref().and_then(|bf| {
+                if bf.rows() == Row::new(1) {
+                    unicode_scripts::frame_to_subscript(bf)
+                } else {
+                    None
                 }
+            });
+
+            // Require every present side to have converted successfully.
+            let tr_ok = tr_frame.is_none() || super_str.is_some();
+            let br_ok = br_frame.is_none() || sub_str.is_some();
+
+            if tr_ok && br_ok && (super_str.is_some() || sub_str.is_some()) {
+                return Ok(Some(build_inline_script_frame(
+                    super_str.as_deref(),
+                    sub_str.as_deref(),
+                    base_rows,
+                    base_baseline,
+                )));
             }
         }
     }
@@ -463,29 +490,64 @@ fn assemble_with_pre_post(
     compose_horizontal(parts, Col::ZERO)
 }
 
-// ── Inline Unicode script frame ───────────────────────────────────────────────
+// ── Inline Unicode script frame ─────────────────────────────────────────────
 
-/// Build a script frame that lives on the *same* baseline row as the base.
+/// Build an inline Unicode script frame.
 ///
-/// Used when all script characters have been converted to Unicode
-/// superscript/subscript equivalents.  The resulting frame:
-/// - Has the same height and baseline as the base element, so
-///   [`assemble_with_pre_post`] places it without shifting the base.
-/// - Contains the converted text at the baseline row.
-fn build_inline_script_frame(text: &str, base_rows: Row, base_baseline: Row) -> TermFrame {
-    let cols: Col = text
-        .chars()
-        .map(|ch| char_cols(ch))
-        .fold(Col::ZERO, |acc, w| acc + w)
+/// The frame keeps the base height (`base_rows`) and baseline unchanged so
+/// that [`assemble_with_pre_post`] places it without shifting the base.
+/// Within that frame the converted text is positioned at:
+///
+/// - superscript: `clamp(base_baseline − 1, 0, base_rows−1)`
+/// - subscript:   `clamp(base_baseline + 1, 0, base_rows−1)`
+///
+/// For a 1-row base both clamp to row 0 → script appears on the same line.
+/// For taller bases the text ends up near the top/bottom of the base.
+fn build_inline_script_frame(
+    super_text: Option<&str>,
+    sub_text: Option<&str>,
+    base_rows: Row,
+    base_baseline: Row,
+) -> TermFrame {
+    fn str_cols(s: &str) -> Col {
+        s.chars().map(char_cols).fold(Col::ZERO, |a, b| a + b)
+    }
+    let cols = super_text
+        .map(str_cols)
+        .unwrap_or(Col::ZERO)
+        .max(sub_text.map(str_cols).unwrap_or(Col::ZERO))
         .max(Col::ZERO);
+
     let rows = base_rows.max(Row::new(1));
+    let max_row = rows - Row::new(1); // last valid row index
+
+    // super: one row above baseline, clamped to [0, max_row]
+    let super_row = (base_baseline - Row::new(1))
+        .max(Row::ZERO)
+        .min(max_row);
+    // sub: one row below baseline, clamped to [0, max_row]
+    let sub_row = (base_baseline + Row::new(1))
+        .max(Row::ZERO)
+        .min(max_row);
+
     let mut frame = TermFrame::new(TermSize::new(cols, rows));
     frame.set_baseline(base_baseline);
-    frame.push_text(
-        TermPoint::new(Col::ZERO, base_baseline),
-        EcoString::from(text),
-        ContentStyle::default(),
-    );
+
+    if let Some(s) = super_text {
+        frame.push_text(
+            TermPoint::new(Col::ZERO, super_row),
+            EcoString::from(s),
+            ContentStyle::default(),
+        );
+    }
+    if let Some(s) = sub_text {
+        frame.push_text(
+            TermPoint::new(Col::ZERO, sub_row),
+            EcoString::from(s),
+            ContentStyle::default(),
+        );
+    }
+
     frame
 }
 
