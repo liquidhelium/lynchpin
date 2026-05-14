@@ -40,9 +40,17 @@ pub fn layout_text(
 
 fn single_text_fragment(text: &str) -> TermMathFrameFragment {
     let frame = make_text_frame(text);
+    // Multi-letter alphabetic text (e.g. "sin", "text") gets `spaced = true`
+    // so that a soft-space (from SpaceElem) between it and an adjacent symbol
+    // is materialised.  Single characters are not marked spaced; their spacing
+    // is handled purely by the math-class auto-spacing rules.
+    // Mirrors the upstream `layout_inline_text` which calls `.with_spaced(true)`
+    // for non-digit multi-character text.
+    let is_multi_letter = text.chars().count() > 1;
     TermMathFrameFragment::new(frame)
         .with_class(MathClass::Alphabetic)
         .with_text_like(true)
+        .with_spaced(is_multi_letter)
 }
 
 // ── layout_symbol ─────────────────────────────────────────────────────────────

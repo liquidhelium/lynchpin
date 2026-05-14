@@ -197,7 +197,11 @@ impl<'cfg, 'eng, 'e> TermMathContext<'cfg, 'eng, 'e> {
         // ── Whitespace & structural ───────────────────────────────────────────
 
         if content.is::<SpaceElem>() {
-            self.push(TermMathFragment::Spacing(Col::new(1), true));
+            // Push a soft Space (pending), not a hard Spacing.  TermMathRun::new
+            // will only materialise it as a real Spacing(1) when the adjacent
+            // fragments are "spaced" (multi-letter text operators, inline boxes).
+            // This mirrors the upstream MathFragment::Space handling.
+            self.push(TermMathFragment::Space);
             return Ok(());
         }
 

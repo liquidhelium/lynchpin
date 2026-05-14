@@ -144,6 +144,15 @@ impl TermLimits {
 pub enum TermMathFragment {
     /// A rendered box with associated math metadata.
     Frame(TermMathFrameFragment),
+    /// Soft space originating from a `SpaceElem` in the math source.
+    ///
+    /// Unlike `Spacing`, this variant is **never pushed** into the resolved
+    /// fragment list directly.  Instead it is held as a pending soft-space and
+    /// only materialised into a `Spacing(1, false)` when the adjacent fragments
+    /// have `is_spaced() == true` (e.g. multi-letter text operators).
+    /// This mirrors the upstream `MathFragment::Space` handling in
+    /// `typst-layout`'s `MathRun::new`.
+    Space,
     /// Horizontal whitespace (columns, is_weak).
     ///
     /// Weak spacing may be suppressed when an explicit non-weak spacing
@@ -162,7 +171,7 @@ impl TermMathFragment {
         match self {
             Self::Frame(f) => f.width(),
             Self::Spacing(cols, _) => *cols,
-            Self::Align | Self::Linebreak => Col::ZERO,
+            Self::Space | Self::Align | Self::Linebreak => Col::ZERO,
         }
     }
 
@@ -171,7 +180,7 @@ impl TermMathFragment {
     pub fn rows(&self) -> Row {
         match self {
             Self::Frame(f) => f.rows(),
-            _ => Row::ZERO,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => Row::ZERO,
         }
     }
 
@@ -180,7 +189,7 @@ impl TermMathFragment {
     pub fn ascent(&self) -> Row {
         match self {
             Self::Frame(f) => f.ascent(),
-            _ => Row::ZERO,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => Row::ZERO,
         }
     }
 
@@ -189,7 +198,7 @@ impl TermMathFragment {
     pub fn descent(&self) -> Row {
         match self {
             Self::Frame(f) => f.descent(),
-            _ => Row::ZERO,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => Row::ZERO,
         }
     }
 
@@ -198,7 +207,7 @@ impl TermMathFragment {
     pub fn baseline(&self) -> Row {
         match self {
             Self::Frame(f) => f.baseline(),
-            _ => Row::ZERO,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => Row::ZERO,
         }
     }
 
@@ -207,7 +216,7 @@ impl TermMathFragment {
     pub fn class(&self) -> MathClass {
         match self {
             Self::Frame(f) => f.class,
-            _ => MathClass::Normal,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => MathClass::Normal,
         }
     }
 
@@ -216,23 +225,31 @@ impl TermMathFragment {
     pub fn limits(&self) -> TermLimits {
         match self {
             Self::Frame(f) => f.limits,
-            _ => TermLimits::Never,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => TermLimits::Never,
         }
     }
 
     /// Whether this fragment should be invisible for automatic inter-fragment
     /// spacing purposes (Align, Linebreak).
+    ///
+    /// Note: `Space` is handled *before* the ignorant check in `TermMathRun::new`
+    /// and is never pushed to the resolved list, so it does not need to be
+    /// listed here.
     #[inline]
     pub fn is_ignorant(&self) -> bool {
         matches!(self, Self::Align | Self::Linebreak)
     }
 
     /// Whether this fragment has explicit surrounding space.
+    ///
+    /// When `true`, a pending soft-space (from `SpaceElem`) will be
+    /// materialised as a `Spacing(1, false)` between this fragment and its
+    /// neighbour.  Set on multi-letter text operators and inline-box frames.
     #[inline]
     pub fn is_spaced(&self) -> bool {
         match self {
             Self::Frame(f) => f.spaced,
-            _ => false,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => false,
         }
     }
 
@@ -241,7 +258,7 @@ impl TermMathFragment {
     pub fn is_text_like(&self) -> bool {
         match self {
             Self::Frame(f) => f.text_like,
-            _ => false,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => false,
         }
     }
 
@@ -250,7 +267,7 @@ impl TermMathFragment {
     pub fn italics_correction(&self) -> Col {
         match self {
             Self::Frame(f) => f.italics_correction,
-            _ => Col::ZERO,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => Col::ZERO,
         }
     }
 
@@ -259,7 +276,7 @@ impl TermMathFragment {
     pub fn accent_attach(&self) -> Col {
         match self {
             Self::Frame(f) => f.accent_attach,
-            _ => Col::ZERO,
+            Self::Space | Self::Spacing(_, _) | Self::Align | Self::Linebreak => Col::ZERO,
         }
     }
 
@@ -285,7 +302,7 @@ impl TermMathFragment {
         match self {
             Self::Frame(f) => f.frame,
             Self::Spacing(cols, _) => TermFrame::new(TermSize::new(cols.max(Col::ZERO), Row::ZERO)),
-            _ => TermFrame::new(TermSize::ZERO),
+            Self::Space | Self::Align | Self::Linebreak => TermFrame::new(TermSize::ZERO),
         }
     }
 }

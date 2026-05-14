@@ -18,19 +18,45 @@ pub struct TermMathRun(pub Vec<TermMathFragment>);
 impl TermMathRun {
     /// Build a run from raw fragments, inserting automatic inter-fragment
     /// spacing and collapsing weak spacings.
+    ///
+    /// Mirrors the behaviour of `typst-layout`'s `MathRun::new`:
+    ///
+    /// * `Space` (from `SpaceElem`) is **not** pushed; instead a
+    ///   `pending_space` flag is set.  The flag is only materialised into a
+    ///   `Spacing(1, false)` when the neighbouring fragments both have
+    ///   `is_spaced() == false` and one of them has `is_spaced() == true`.
+    ///   For all other pairs (operators, relations, …) the auto-spacing rules
+    ///   take precedence and the soft-space is discarded.
+    /// * Explicit `Spacing` resets both `last` and `pending_space`, so it
+    ///   always disables automatic spacing.
     pub fn new(frags: Vec<TermMathFragment>) -> Self {
         let mut resolved: Vec<TermMathFragment> = Vec::with_capacity(frags.len());
         // Index of the last non-ignorant Frame fragment in `resolved`.
         let mut last: Option<usize> = None;
+        // Whether a `Space` fragment (from SpaceElem) has been seen since the
+        // last non-ignorant fragment.  Consumed (or discarded) on the next
+        // non-ignorant fragment.
+        let mut pending_space = false;
 
         for frag in frags {
             match &frag {
+                // ── Soft space from SpaceElem ────────────────────────────────
+                // Do NOT push.  Store as pending so the spacing() function can
+                // decide whether to materialise it based on is_spaced().
+                TermMathFragment::Space => {
+                    if last.is_some() {
+                        pending_space = true;
+                    }
+                    continue;
+                }
+
                 // ── Explicit spacing ─────────────────────────────────────────
                 TermMathFragment::Spacing(cols, weak) => {
                     let cols = *cols;
                     let weak = *weak;
                     // Explicit spacing resets auto-spacing context.
                     last = None;
+                    pending_space = false;
                     if weak {
                         match resolved.last_mut() {
                             // Skip leading weak spacing.
@@ -54,6 +80,7 @@ impl TermMathRun {
                 }
                 TermMathFragment::Linebreak => {
                     last = None;
+                    pending_space = false;
                     resolved.push(frag);
                     continue;
                 }
@@ -63,15 +90,17 @@ impl TermMathRun {
             }
 
             // Insert automatic spacing between the previous non-ignorant
-            // fragment and this one, unless the previous fragment was reset
-            // (e.g. after an explicit Spacing or Linebreak).
+            // fragment and this one.
             if !frag.is_ignorant() {
                 if let Some(i) = last {
-                    if let Some(gap) = auto_spacing(resolved[i].class(), frag.class()) {
+                    let sp = pending_space;
+                    if let Some(gap) = auto_spacing(&resolved[i], sp, &frag) {
                         // Insert the auto-spacing right after `last`.
                         resolved.insert(i + 1, TermMathFragment::Spacing(gap, false));
                     }
                 }
+                // Consume the pending soft-space (whether or not it was used).
+                pending_space = false;
                 // The current fragment will be at index `resolved.len()` after push.
                 last = Some(resolved.len());
             }
@@ -203,7 +232,7 @@ impl TermMathRun {
                     frame.push_frame(TermPoint::new(x, y), ff.frame);
                 }
                 TermMathFragment::Spacing(..) => {}
-                TermMathFragment::Align | TermMathFragment::Linebreak => {}
+                TermMathFragment::Space | TermMathFragment::Align | TermMathFragment::Linebreak => {}
             }
             x = x + w;
         }
@@ -283,28 +312,44 @@ impl From<TermMathFragment> for TermMathRun {
 /// Return the automatic inter-fragment spacing in terminal columns, or `None`
 /// for no spacing.
 ///
-/// Simplified from the typst TeXbook-based spacing table.
-fn auto_spacing(l: MathClass, r: MathClass) -> Option<Col> {
-    match (l, r) {
-        // No spacing adjacent to punctuation.
-        (_, MathClass::Punctuation) | (MathClass::Punctuation, _) => None,
+/// Implements the TeXbook-based math spacing table, simplified for terminal
+/// rendering.  Mirrors `typst-layout`'s `spacing()` function.
+///
+/// `pending_space` is `true` when a `SpaceElem`-derived `Space` fragment was
+/// seen between `l` and `r`.  It is only used as a fallback for the
+/// `is_spaced()` rule; all class-based rules ignore it.
+fn auto_spacing(l: &TermMathFragment, pending_space: bool, r: &TermMathFragment) -> Option<Col> {
+    use MathClass::*;
+    match (l.class(), r.class()) {
+        // No spacing before punctuation.
+        (_, Punctuation) => None,
+        // Thin spacing after punctuation (comma in argument lists, etc.).
+        (Punctuation, _) => Some(Col::new(1)),
 
         // No spacing after opening or before closing delimiters.
-        (MathClass::Opening, _)
-        | (_, MathClass::Closing)
-        | (MathClass::Fence, _)
-        | (_, MathClass::Fence) => None,
+        (Opening, _)
+        | (_, Closing)
+        | (Fence, _)
+        | (_, Fence) => None,
 
         // No spacing between two consecutive relations.
-        (MathClass::Relation, MathClass::Relation) => None,
+        (Relation, Relation) => None,
         // Thick spacing around relations.
-        (MathClass::Relation, _) | (_, MathClass::Relation) => Some(Col::new(1)),
+        (Relation, _) | (_, Relation) => Some(Col::new(1)),
 
         // Medium spacing around binary operators.
-        (MathClass::Binary, _) | (_, MathClass::Binary) => Some(Col::new(1)),
+        (Binary, _) | (_, Binary) => Some(Col::new(1)),
 
-        // Spacing around large operators.
-        (MathClass::Large, _) | (_, MathClass::Large) => Some(Col::new(1)),
+        // No thin spacing between a large operator and an opening delimiter.
+        (Large, Opening) => None,
+        // Thin spacing around large operators.
+        (Large, _) | (_, Large) => Some(Col::new(1)),
+
+        // Soft-space from SpaceElem: only materialise when at least one of the
+        // adjacent fragments is "spaced" (multi-letter text operators, inline
+        // boxes).  This matches the upstream `_ if (l.is_spaced() || r.is_spaced()) => space`
+        // rule in `MathRun::new`.
+        _ if pending_space && (l.is_spaced() || r.is_spaced()) => Some(Col::new(1)),
 
         _ => None,
     }
