@@ -37,7 +37,15 @@ pub enum Item<'a> {
     /// Fractional spacing.
     Fr(Fr),
     /// A completed frame.
-    Frame(TermFrame),
+    Frame {
+        /// The laid-out frame.
+        frame: TermFrame,
+        /// Horizontal alignment within the region.
+        align_x: FixedAlignment,
+        /// Minimum vertical space required before placing this frame
+        /// (orphan/widow protection).  Always >= `frame.rows()`.
+        need: Row,
+    },
     /// An absolutely placed frame.
     Placed {
         frame: TermFrame,
@@ -91,7 +99,8 @@ struct Distributor<'x> {
     items: Vec<Item<'x>>,
     finished: Vec<TermFrame>,
     /// Frames collected in the current region, to be composed in finish_region.
-    pending_frames: Vec<TermFrame>,
+    /// Each entry pairs the frame with its horizontal alignment.
+    pending_frames: Vec<(TermFrame, FixedAlignment)>,
     /// Tags accumulated with their y positions, to be inserted into the
     /// region result frame.
     pending_tags: Vec<(Tag, Row)>,
@@ -141,8 +150,8 @@ impl<'x> Distributor<'x> {
                 self.trim_spacing();
                 Ok(true)
             }
-            Item::Frame(frame) => {
-                self.handle_frame(frame)
+            Item::Frame { frame, align_x, need } => {
+                self.handle_frame(frame, align_x, need)
             }
             Item::Placed { frame, align_x, align_y, delta } => {
                 self.handle_placed(frame, align_x, align_y, delta)
@@ -173,9 +182,13 @@ impl<'x> Distributor<'x> {
         Ok(true)
     }
 
-    fn handle_frame(&mut self, frame: TermFrame) -> SourceResult<bool> {
+    fn handle_frame(&mut self, frame: TermFrame, align_x: FixedAlignment, need: Row) -> SourceResult<bool> {
         let h = frame.rows();
-        if self.current_y + h > self.regions.size.rows && !self.pending_frames.is_empty() {
+        // Use `need` (orphan/widow protection) for the break threshold.
+        // For lines, `need` encodes how much space is required together with
+        // companion lines (e.g. first + second line for orphan protection).
+        // For block frames, `need` equals `h` so behaviour is unchanged.
+        if self.current_y + need > self.regions.size.rows && !self.pending_frames.is_empty() {
             if self.regions.may_progress() {
                 if self.should_stick() {
                     self.sticky = Some(self.snapshot());
@@ -185,7 +198,7 @@ impl<'x> Distributor<'x> {
                 self.current_y = TermScalar::ZERO;
             }
         }
-        self.pending_frames.push(frame);
+        self.pending_frames.push((frame, align_x));
         self.current_y = self.current_y + h;
         Ok(true)
     }
@@ -231,7 +244,7 @@ impl<'x> Distributor<'x> {
         } else {
             frames
                 .iter()
-                .map(|f| f.cols())
+                .map(|f| f.0.cols())
                 .max()
                 .unwrap_or(TermScalar::ZERO)
         };
@@ -242,9 +255,20 @@ impl<'x> Distributor<'x> {
             let mut result = TermFrame::new(TermSize::new(effective_width, self.current_y));
             let mut y = TermScalar::ZERO;
             let frames_len = frames.len();
-            for (i, frame) in frames.into_iter().enumerate() {
+            for (i, (frame, align_x)) in frames.into_iter().enumerate() {
                 let h = frame.rows().max(TermScalar::ONE);
-                result.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
+                // Compute horizontal offset from alignment.
+                let x = match align_x {
+                    FixedAlignment::Start => TermScalar::ZERO,
+                    FixedAlignment::Center => {
+                        (effective_width - frame.cols()).max(TermScalar::ZERO)
+                            / TermScalar::new(2)
+                    }
+                    FixedAlignment::End => {
+                        (effective_width - frame.cols()).max(TermScalar::ZERO)
+                    }
+                };
+                result.push_frame(TermPoint::new(x, y), frame);
                 y = y + h;
                 // Add one blank row between consecutive flow elements (paragraph
                 // spacing), but NOT after the last frame — that would inflate

@@ -188,10 +188,7 @@ impl<'a> Collector<'a, '_, '_> {
             self.base.cols,
         )?;
         let need = frame.rows();
-        let align = Axes::new(
-            FixedAlignment::Start.into(),
-            FixedAlignment::Start.into(),
-        );
+        let align = styles.resolve(AlignElem::alignment);
         self.output.push(Child::Line(LineChild { frame, align, need }));
         Ok(())
     }
@@ -206,10 +203,7 @@ impl<'a> Collector<'a, '_, '_> {
             elem,
             styles,
             locator: loc,
-            align: Axes::new(
-                FixedAlignment::Start.into(),
-                FixedAlignment::Start.into(),
-            ),
+            align: styles.resolve(AlignElem::alignment),
             sticky: false,
             alone: false,
             fr: None,

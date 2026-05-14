@@ -489,12 +489,18 @@ const RAW_LINE_RULE: ShowFn<RawLine> = |elem, _, _| {
 
 // ── Layout rules ─────────────────────────────────────────────────────────────
 
-const ALIGN_RULE: ShowFn<AlignElem> = |elem, _, _| {
+const ALIGN_RULE: ShowFn<AlignElem> = |elem, _, styles| {
+    // AlignElem's alignment is stored on the element field, NOT automatically
+    // pushed onto the style chain.  We must bake it into the body content
+    // with `Content::set` so that inner layout (fn par / fn block) sees it
+    // via `styles.resolve(AlignElem::alignment)`.
+    let alignment = elem.alignment.get(styles);
+    let body = elem.body.clone().set(AlignElem::alignment, alignment);
     Ok(TermBlockElem::new()
-        .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new(
-            elem.clone(),
-            |elem, engine, locator, styles, region| {
-                crate::flow::layout_term_frame(engine, &elem.body, locator, styles, region)
+        .with_body(Some(TermBlockBody::SingleLayouter(TermBlockCallback::new_content(
+            body,
+            |body, engine, locator, styles, region| {
+                crate::flow::layout_term_frame(engine, body, locator, styles, region)
             },
         ))))
         .pack()

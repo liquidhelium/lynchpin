@@ -425,7 +425,7 @@ fn greedy_wrap(
 }
 
 /// Build frames from wrapped lines, stacked vertically.
-fn build_paragraph_frame(lines: Vec<(Vec<InlineItem>, Col)>, justify: bool) -> TermFrame {
+fn build_paragraph_frame(lines: Vec<(Vec<InlineItem>, Col)>, justify: bool, align: FixedAlignment) -> TermFrame {
     if lines.is_empty() {
         return TermFrame::new(TermSize::new(TermScalar::ZERO, TermScalar::ONE));
     }
@@ -458,7 +458,15 @@ fn build_paragraph_frame(lines: Vec<(Vec<InlineItem>, Col)>, justify: bool) -> T
     let mut y: Row = TermScalar::ZERO;
     for frame in line_frames {
         let h = frame.rows().max(TermScalar::ONE);
-        out.push_frame(TermPoint::new(TermScalar::ZERO, y), frame);
+        // Align each line horizontally within the paragraph frame.
+        let x = match align {
+            FixedAlignment::Start => TermScalar::ZERO,
+            FixedAlignment::Center => {
+                (max_cols - frame.cols()).max(TermScalar::ZERO) / TermScalar::new(2)
+            }
+            FixedAlignment::End => (max_cols - frame.cols()).max(TermScalar::ZERO),
+        };
+        out.push_frame(TermPoint::new(x, y), frame);
         y = y + h;
     }
     out
@@ -484,7 +492,7 @@ pub fn layout_inline<'a>(
     collect_items_from_pairs(children, &mut items, engine, region);
 
     let lines = greedy_wrap(items, region.cols, &pc);
-    Ok(vec![build_paragraph_frame(lines, pc.justify)])
+    Ok(vec![build_paragraph_frame(lines, pc.justify, pc.align)])
 }
 
 /// Layout a [`ParElem`] — the block-level entry point called by flow
@@ -536,5 +544,5 @@ pub fn layout_paragraph(
     collect_items_from_pairs(&children, &mut items, engine, region);
 
     let lines = greedy_wrap(items, max_width, &pc);
-    Ok(build_paragraph_frame(lines, pc.justify))
+    Ok(build_paragraph_frame(lines, pc.justify, pc.align))
 }

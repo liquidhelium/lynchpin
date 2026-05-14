@@ -91,10 +91,12 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
         // In terminal layout, we handle the spill first, then remaining children.
         let region = TermRegion::new(self.regions.size, self.regions.expand);
         if let Some(spill) = self.work.spill.take() {
+            let align_x = spill.align().x;
             let frames = spill.layout(self.engine, region)?;
             for frame in frames {
                 if !frame.size().is_empty() {
-                    items.push(distribute::Item::Frame(frame));
+                    let need = frame.rows();
+                    items.push(distribute::Item::Frame { frame, align_x, need });
                 }
             }
         }
@@ -112,19 +114,27 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
                 }
                 Child::Line(line) => {
                     if !line.frame.size().is_empty() {
-                        items.push(distribute::Item::Frame(line.frame.clone()));
+                        items.push(distribute::Item::Frame {
+                            need: line.need,
+                            align_x: line.align.x,
+                            frame: line.frame.clone(),
+                        });
                     }
                 }
                 Child::Single(single) => {
+                    let align_x = single.align.x;
                     let frame = single.layout(self.engine, region)?;
                     if !frame.size().is_empty() {
-                        items.push(distribute::Item::Frame(frame));
+                        let need = frame.rows();
+                        items.push(distribute::Item::Frame { frame, align_x, need });
                     }
                 }
                 Child::Multi(multi) => {
+                    let align_x = multi.align.x;
                     let frame = multi.layout(self.engine, region)?;
                     if !frame.size().is_empty() {
-                        items.push(distribute::Item::Frame(frame));
+                        let need = frame.rows();
+                        items.push(distribute::Item::Frame { frame, align_x, need });
                     }
                 }
                 Child::Placed(placed) => {

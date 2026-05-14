@@ -116,6 +116,21 @@ impl TermBlockCallback {
         }
     }
 
+    /// Create from a plain [`Content`] value and a function/closure.
+    ///
+    /// Use this when the captured value isn't a native element (e.g. a styled
+    /// body fragment produced by `Content::set(...)`).
+    pub fn new_content<F>(captured: Content, f: F) -> Self
+    where
+        F: Fn(&Content, &mut Engine<'_>, Locator<'_>, StyleChain<'_>, TermRegion) -> SourceResult<TermFrame>
+            + Send + Sync + 'static,
+    {
+        Self {
+            captured,
+            f: Arc::new(f),
+        }
+    }
+
     /// Invoke the callback.
     pub fn call(
         &self,
