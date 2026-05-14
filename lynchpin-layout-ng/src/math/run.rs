@@ -93,7 +93,7 @@ impl TermMathRun {
             // they follow a Normal / Alphabetic / Closing / Fence fragment,
             // i.e. they are acting as infix operators, not unary prefix.
             // Mirrors the upstream logic in `typst-layout`'s `MathRun::new`.
-            if frag.class() == MathClass::Varying {
+            if frag.class() == MathClass::Vary {
                 if matches!(
                     last.map(|i| resolved[i].class()),
                     Some(

@@ -9,27 +9,7 @@ use lynchpin_library_ng::frame::{text_cols, Col, Row, TermFrame, TermSize};
 // ── MathClass ────────────────────────────────────────────────────────────────
 
 /// Unicode math class for a character or fragment.
-///
-/// Mirrors `unicode_math_class::MathClass`.  We define this locally to avoid
-/// pulling in an extra dependency that isn't available in `lynchpin-layout-ng`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MathClass {
-    Normal,
-    Alphabetic,
-    Binary,
-    Closing,
-    Diacritic,
-    Fence,
-    GlyphPart,
-    Large,
-    Opening,
-    Punctuation,
-    Relation,
-    Space,
-    Special,
-    Unclassified,
-    Varying,
-}
+pub use unicode_math_class::MathClass;
 
 /// Classify a Unicode character into its math class.
 ///
@@ -41,7 +21,7 @@ pub enum MathClass {
 /// This replaces the previous hand-crafted lookup table, which had gaps and
 /// misclassifications (e.g. `∞` was incorrectly listed as `Relation`).
 pub fn math_class(ch: char) -> Option<MathClass> {
-    unicode_math_class::class(ch).map(MathClass::from)
+    unicode_math_class::class(ch)
 }
 
 // ── TermLimits ────────────────────────────────────────────────────────────────
@@ -276,29 +256,6 @@ pub struct TermMathFrameFragment {
     pub accent_attach: Col,
 }
 
-// ── Conversion from unicode_math_class ──────────────────────────────────────
-
-impl From<unicode_math_class::MathClass> for MathClass {
-    fn from(c: unicode_math_class::MathClass) -> Self {
-        match c {
-            unicode_math_class::MathClass::Normal => MathClass::Normal,
-            unicode_math_class::MathClass::Alphabetic => MathClass::Alphabetic,
-            unicode_math_class::MathClass::Binary => MathClass::Binary,
-            unicode_math_class::MathClass::Closing => MathClass::Closing,
-            unicode_math_class::MathClass::Diacritic => MathClass::Diacritic,
-            unicode_math_class::MathClass::Fence => MathClass::Fence,
-            unicode_math_class::MathClass::GlyphPart => MathClass::GlyphPart,
-            unicode_math_class::MathClass::Large => MathClass::Large,
-            unicode_math_class::MathClass::Opening => MathClass::Opening,
-            unicode_math_class::MathClass::Punctuation => MathClass::Punctuation,
-            unicode_math_class::MathClass::Relation => MathClass::Relation,
-            unicode_math_class::MathClass::Space => MathClass::Space,
-            unicode_math_class::MathClass::Unary => MathClass::Normal,
-            unicode_math_class::MathClass::Vary => MathClass::Varying,
-            unicode_math_class::MathClass::Special => MathClass::Special,
-        }
-    }
-}
 
 impl TermMathFrameFragment {
     /// Build a fragment from `frame` with sensible defaults.
