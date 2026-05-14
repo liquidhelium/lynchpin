@@ -237,9 +237,16 @@ impl<'x> Distributor<'x> {
             return Ok(());
         }
 
-        // When the configured width is infinite (auto page width), shrink-wrap
-        // to the widest sub-frame rather than creating an infinitely-wide grid.
-        let effective_width = if width.is_finite() {
+        // Determine the effective frame width:
+        // - If expand.x is true AND width is finite: use the configured width
+        //   (alignment offsets are meaningful — content is positioned within
+        //   the full region width).
+        // - Otherwise (infinite width OR expand.x = false / measurement mode):
+        //   shrink-wrap to the widest sub-frame.  In measurement mode
+        //   (expand.x = false, e.g. auto-column sizing) alignment must NOT
+        //   inflate the reported content width, so the result frame is sized
+        //   to its content and the x offset for every frame becomes zero.
+        let effective_width = if self.config.expand.x && width.is_finite() {
             width
         } else {
             frames

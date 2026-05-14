@@ -504,7 +504,8 @@ const ALIGN_RULE: ShowFn<AlignElem> = |elem, _, styles| {
             },
         ))))
         .pack()
-        .spanned(elem.span()))
+        .spanned(elem.span())
+        .set(AlignElem::alignment, alignment))
 };
 
 const PAD_RULE: ShowFn<PadElem> = |elem, _, _styles| {
