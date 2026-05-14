@@ -33,75 +33,15 @@ pub enum MathClass {
 
 /// Classify a Unicode character into its math class.
 ///
-/// Returns `None` for characters not in our lookup table (callers should
-/// default to `MathClass::Normal`).
+/// Delegates to the `unicode_math_class` crate (Unicode TR25, revision 15
+/// data), converting via `From<unicode_math_class::MathClass>`.  Returns
+/// `None` for characters that have no assigned math class; callers should
+/// default to `MathClass::Normal`.
 ///
-/// This is a minimal implementation covering only the most common math
-/// symbols.  A full implementation would use the `unicode-math-class` crate.
+/// This replaces the previous hand-crafted lookup table, which had gaps and
+/// misclassifications (e.g. `∞` was incorrectly listed as `Relation`).
 pub fn math_class(ch: char) -> Option<MathClass> {
-    match ch {
-        // ── Opening delimiters ─────────────────────────────────────────────
-        '(' | '[' | '{' | '⟮' | '⟨' | '〈' | '⌈' | '⌊' => Some(MathClass::Opening),
-
-        // ── Closing delimiters ─────────────────────────────────────────────
-        ')' | ']' | '}' | '⟯' | '⟩' | '〉' | '⌉' | '⌋' => Some(MathClass::Closing),
-
-        // ── Fence (unicode) ────────────────────────────────────────────────
-        '|' => Some(MathClass::Fence),
-        '‖' | '∥' => Some(MathClass::Fence),
-
-        // ── Binary operators ───────────────────────────────────────────────
-        '+' | '−' | '±' | '∓' | '×' | '÷' | '∗' | '∘' | '∙' | '∩' | '∪'
-        | '∧' | '∨' | '⊂' | '⊃' | '⊄' | '⊅' | '⊆' | '⊇' | '⊈' | '⊉'
-        | '⊊' | '⊋' | '⊌' | '⊍' | '⊎' | '⊏' | '⊐' | '⊑' | '⊒' | '⊓'
-        | '⊔' | '⊕' | '⊖' | '⊗' | '⊘' | '⊙' | '⊚' | '⊛' | '⊜' | '⊝'
-        | '⋅' | '⋆' | '⋇' | '⋈' | '⋉' | '⋊' | '⋋' | '⋌' | '⋍' | '⋎'
-        | '⋏' | '⋐' | '⋑' | '⋒' | '⋓' | '⋔' | '⋕' | '⋖' | '⋗' | '⋘'
-        | '⋙' | '⋚' | '⋛' | '⋜' | '⋝' | '⋞' | '⋟' | '⋠' | '⋡' | '⋢'
-        | '⋣' | '⋤' | '⋥' | '⋦' | '⋧' | '⋨' | '⋩' | '⋪' | '⋫' | '⋬'
-        | '⋭' | '⋮' | '⋯' | '⋰' | '⋱' | '⋲' | '⋳' | '⋴' | '⋵' | '⋶'
-        | '⋷' | '⋸' | '⋹' | '⋺' | '⋻' | '⋼' | '⋽' | '⋾' | '⋿'
-        | '\\' | '¬' => Some(MathClass::Binary),
-
-        // ── Relations ──────────────────────────────────────────────────────
-        '=' | '≠' | '≡' | '≢' | '<' | '>' | '≤' | '≥' | '≪' | '≫' | '≮'
-        | '≯' | '≰' | '≱' | '≲' | '≳' | '≴' | '≵' | '≶' | '≷' | '≸'
-        | '≹' | '≺' | '≻' | '≼' | '≽' | '≾' | '≿' | '⊀' | '⊁' | '∼'
-        | '∽' | '∿' | '≁' | '≂' | '≃' | '≄' | '≅' | '≆' | '≇' | '≈'
-        | '≉' | '≊' | '≋' | '≌' | '≍' | '≎' | '≏' | '≐' | '≑' | '≒'
-        | '≓' | '≔' | '≕' | '≖' | '≗' | '≘' | '≙' | '≚' | '≛' | '≜'
-        | '≝' | '≞' | '≟' | '≣' | '∈' | '∉' | '∊'
-        | '∋' | '∌' | '∍' | '→' | '←' | '↔'
-        | '⇒' | '⇐' | '⇔' | '↦' | '⟹' | '⟸' | '⟺' | '∶' | '∷'
-        | '∝' | '∞' | '∟' => Some(MathClass::Relation),
-
-        // ── Large operators ────────────────────────────────────────────────
-        '∑' | '∫' | '∬' | '∭' | '∮' | '∯' | '∰' | '∱' | '∲' | '∳'
-        | '∏' | '∐' | '⋀' | '⋁' | '⋂' | '⋃' | '⨀' | '⨁' | '⨂' | '⨃'
-        | '⨄' | '⨅' | '⨆' | '⨇' | '⨈' | '⨉' | '⨊' | '⨋' | '⨌' | '⨍'
-        | '⨎' | '⨏' | '⨐' | '⨑' | '⨒' | '⨓' | '⨔' | '⨕' | '⨖' | '⨗'
-        | '⨘' | '⨙' | '⨚' | '⨛' | '⨜' | '⨝' | '⨞' | '⨟' | '⨠' | '⨡'
-        | '⨢' | '⨣' | '⨤' | '⨥' | '⨦' | '⨧' | '⨨' | '⨩' | '⨪' | '⨫'
-        | '⨬' | '⨭' | '⨮' | '⨯' | '⨰' | '⨱' | '⨲' | '⨳' | '⨴' | '⨵'
-        | '⨶' | '⨷' | '⨸' | '⨹' | '⨺' | '⨻' | '⨼' | '⨽' | '⨾' | '⨿'
-        | '⩀' | '⩁' | '⩂' => Some(MathClass::Large),
-
-        // ── Punctuation ────────────────────────────────────────────────────
-        ',' | ';' | ':' | '.' | '!' | '?' => Some(MathClass::Punctuation),
-
-        // ── Diacritic ──────────────────────────────────────────────────────
-        '\u{0300}'..='\u{036F}' | '\u{20D0}'..='\u{20FF}' => Some(MathClass::Diacritic),
-
-        // ── Space ──────────────────────────────────────────────────────────
-        ' ' | '\u{00A0}' | '\u{2000}'..='\u{200A}' => Some(MathClass::Space),
-
-        // ── Alphabetic ─────────────────────────────────────────────────────
-        'a'..='z' | 'A'..='Z' | 'α'..='ω' | 'Α'..='Ω' | '0'..='9' => {
-            Some(MathClass::Alphabetic)
-        }
-
-        _ => None,
-    }
+    unicode_math_class::class(ch).map(MathClass::from)
 }
 
 // ── TermLimits ────────────────────────────────────────────────────────────────

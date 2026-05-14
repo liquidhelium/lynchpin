@@ -38,7 +38,7 @@ impl TermMathRun {
         // non-ignorant fragment.
         let mut pending_space = false;
 
-        for frag in frags {
+        for mut frag in frags {
             match &frag {
                 // ── Soft space from SpaceElem ────────────────────────────────
                 // Do NOT push.  Store as pending so the spacing() function can
@@ -87,6 +87,24 @@ impl TermMathRun {
 
                 // ── Rendered content ─────────────────────────────────────────
                 TermMathFragment::Frame(_) => {}
+            }
+
+            // Reclassify `Varying` operators (e.g. `+`, `-`) as `Binary` when
+            // they follow a Normal / Alphabetic / Closing / Fence fragment,
+            // i.e. they are acting as infix operators, not unary prefix.
+            // Mirrors the upstream logic in `typst-layout`'s `MathRun::new`.
+            if frag.class() == MathClass::Varying {
+                if matches!(
+                    last.map(|i| resolved[i].class()),
+                    Some(
+                        MathClass::Normal
+                            | MathClass::Alphabetic
+                            | MathClass::Closing
+                            | MathClass::Fence
+                    )
+                ) {
+                    frag.set_class(MathClass::Binary);
+                }
             }
 
             // Insert automatic spacing between the previous non-ignorant
