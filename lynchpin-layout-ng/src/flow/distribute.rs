@@ -83,9 +83,11 @@ pub fn distribute(
         items,
         finished: Vec::new(),
         pending_frames: Vec::new(),
+        rollback_frames: Vec::new(),
         pending_tags: Vec::new(),
         sticky: None,
         current_y: TermScalar::ZERO,
+        trailing_weak: TermScalar::ZERO,
     };
 
     distributor.run()
@@ -101,6 +103,10 @@ struct Distributor<'x> {
     /// Frames collected in the current region, to be composed in finish_region.
     /// Each entry pairs the frame with its horizontal alignment.
     pending_frames: Vec<(TermFrame, FixedAlignment)>,
+    /// Frames that were rolled back from the previous region during sticky
+    /// block processing.  They are prepended to the next region's
+    /// `pending_frames` before any new frames are added.
+    rollback_frames: Vec<(TermFrame, FixedAlignment)>,
     /// Tags accumulated with their y positions, to be inserted into the
     /// region result frame.
     pending_tags: Vec<(Tag, Row)>,
@@ -108,14 +114,23 @@ struct Distributor<'x> {
     sticky: Option<DistributionSnapshot>,
     /// Current vertical cursor position within the region.
     current_y: Row,
+    /// Cumulative trailing *weak* spacing added after the last real frame.
+    /// Reset to zero whenever a real frame (or strong spacing) is placed.
+    /// `trim_spacing()` subtracts this from `current_y` so that the region
+    /// result frame does not gain empty rows at the bottom.
+    trailing_weak: Row,
 }
 
 /// A snapshot of distribution state for sticky block rollback.
 struct DistributionSnapshot {
-    /// Items that had been accumulated before the sticky block.
-    items_len: usize,
+    /// Number of pending frames at snapshot time.  Used to truncate
+    /// `pending_frames` when rolling back, so sticky frames are moved
+    /// to the next region rather than left at the bottom of the current one.
+    pending_frames_len: usize,
     /// Current Y position at snapshot time.
     current_y: Row,
+    /// Trailing weak spacing amount at snapshot time.
+    trailing_weak: Row,
 }
 
 impl<'x> Distributor<'x> {
@@ -176,9 +191,17 @@ impl<'x> Distributor<'x> {
                 self.finish_region()?;
                 self.regions.next();
                 self.current_y = TermScalar::ZERO;
+                self.trailing_weak = TermScalar::ZERO;
             }
         }
         self.current_y = self.current_y + amount;
+        if weak {
+            // Accumulate trailing weak spacing so trim_spacing() can remove it.
+            self.trailing_weak = self.trailing_weak + amount;
+        } else {
+            // Strong spacing anchors position; previous trailing weak is consumed.
+            self.trailing_weak = TermScalar::ZERO;
+        }
         Ok(true)
     }
 
@@ -196,10 +219,22 @@ impl<'x> Distributor<'x> {
                 self.finish_region()?;
                 self.regions.next();
                 self.current_y = TermScalar::ZERO;
+                // Restore any rolled-back sticky frames into the new region.
+                if !self.rollback_frames.is_empty() {
+                    let frames = std::mem::take(&mut self.rollback_frames);
+                    let frames_height: Row = frames.iter().map(|(f, _)| f.rows()).fold(TermScalar::ZERO, |a, b| a + b);
+                    self.current_y = self.current_y + frames_height;
+                    // Insert at the front of pending_frames (pending_frames is empty here).
+                    debug_assert!(self.pending_frames.is_empty(), "pending_frames should be empty after finish_region");
+                    self.pending_frames = frames;
+                }
             }
         }
         self.pending_frames.push((frame, align_x));
         self.current_y = self.current_y + h;
+        // A real frame anchors position: trailing weak spacing before it
+        // is consumed (it was the gap between the previous frame and this one).
+        self.trailing_weak = TermScalar::ZERO;
         Ok(true)
     }
 
@@ -220,12 +255,28 @@ impl<'x> Distributor<'x> {
             self.regions.next();
             self.current_y = TermScalar::ZERO;
         }
+        // When `strong` is false this is a *weak* break: it is intentionally a
+        // no-op here.  Weak breaks only force a region change when the layout
+        // engine itself decides the current region is full.  Forcing the break
+        // unconditionally would produce spurious empty leading regions for
+        // documents that begin with a weak break (e.g. the implicit break
+        // before the first paragraph).
         Ok(true)
     }
 
     fn finish_region(&mut self) -> SourceResult<()> {
         if let Some(snap) = self.sticky.take() {
+            // Roll back pending_frames to the snapshot length so that sticky
+            // frames (e.g. headings) are removed from the current region and
+            // re-placed at the top of the next one.
+            let rolled_back = self.pending_frames.drain(snap.pending_frames_len..).collect::<Vec<_>>();
+            // Prepend rolled-back frames so the next region picks them up first.
+            // Any previously pending rollback frames come before the new ones.
+            let mut new_rollback = std::mem::take(&mut self.rollback_frames);
+            new_rollback.extend(rolled_back);
+            self.rollback_frames = new_rollback;
             self.current_y = snap.current_y;
+            self.trailing_weak = snap.trailing_weak;
         }
 
         self.trim_spacing();
@@ -299,17 +350,19 @@ impl<'x> Distributor<'x> {
 
     fn keep_spacing(&mut self, _amount: Row) -> bool {
         // In terminal, weak spacing is always kept unless collapsed by
-        // the caller.
+        // the caller.  Collapsing of consecutive weak spacings is handled
+        // by problem #9 (keep_spacing overhaul); for now we always accept.
         true
     }
 
     fn trim_spacing(&mut self) {
-        // Trim trailing weak spacing at region end.
-        // In terminal layout this is a no-op since we track current_y directly.
-    }
-
-    fn weak_spacing(&self) -> Row {
-        TermScalar::ZERO
+        // Remove trailing weak spacing accumulated since the last real frame.
+        // This prevents empty rows at the bottom of a region (or the end of
+        // the document) that come purely from weak inter-block gaps.
+        if self.trailing_weak > TermScalar::ZERO {
+            self.current_y = (self.current_y - self.trailing_weak).max(TermScalar::ZERO);
+            self.trailing_weak = TermScalar::ZERO;
+        }
     }
 
     // ── Sticky block support ──────────────────────────────────────────────
@@ -322,8 +375,9 @@ impl<'x> Distributor<'x> {
 
     fn snapshot(&self) -> DistributionSnapshot {
         DistributionSnapshot {
-            items_len: self.finished.len(),
+            pending_frames_len: self.pending_frames.len(),
             current_y: self.current_y,
+            trailing_weak: self.trailing_weak,
         }
     }
 }
