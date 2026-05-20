@@ -59,6 +59,23 @@ pub enum Item<'a> {
     Break(bool),
 }
 
+// ── Pending placed entries ────────────────────────────────────────────────────
+
+/// An absolutely placed frame waiting to be written into the region output.
+///
+/// Placed items do not consume vertical flow space but must be rendered
+/// after the normal frame stack is composited.  We collect them during
+/// distribution and flush them in `finish_region`.
+struct PlacedEntry {
+    frame: TermFrame,
+    align_x: Option<FixedAlignment>,
+    align_y: Option<FixedAlignment>,
+    delta: (Col, Row),
+    /// The value of `current_y` when this item was encountered, used as the
+    /// y-anchor when `align_y` is `None` (follow-flow mode).
+    flow_y: Row,
+}
+
 impl Item<'_> {
     /// Whether this item can be migrated to the next region.
     pub fn migratable(&self) -> bool {
@@ -88,6 +105,7 @@ pub fn distribute(
         sticky: None,
         current_y: TermScalar::ZERO,
         trailing_weak: TermScalar::ZERO,
+        pending_placed: Vec::new(),
     };
 
     distributor.run()
@@ -119,6 +137,9 @@ struct Distributor<'x> {
     /// `trim_spacing()` subtracts this from `current_y` so that the region
     /// result frame does not gain empty rows at the bottom.
     trailing_weak: Row,
+    /// Absolutely placed frames accumulated for the current region.
+    /// Flushed to the output in `finish_region` after the normal frames.
+    pending_placed: Vec<PlacedEntry>,
 }
 
 /// A snapshot of distribution state for sticky block rollback.
@@ -240,12 +261,22 @@ impl<'x> Distributor<'x> {
 
     fn handle_placed(
         &mut self,
-        _frame: TermFrame,
-        _align_x: Option<FixedAlignment>,
-        _align_y: Option<FixedAlignment>,
-        _delta: (Col, Row),
+        frame: TermFrame,
+        align_x: Option<FixedAlignment>,
+        align_y: Option<FixedAlignment>,
+        delta: (Col, Row),
     ) -> SourceResult<bool> {
-        // Placed items don't consume flow space.
+        // Placed items do NOT consume vertical space — they are composited on
+        // top of the normal frame stack in finish_region.
+        // Record the current flow position as the y-anchor for follow-flow mode
+        // (align_y = None).
+        self.pending_placed.push(PlacedEntry {
+            frame,
+            align_x,
+            align_y,
+            delta,
+            flow_y: self.current_y,
+        });
         Ok(true)
     }
 
@@ -284,7 +315,7 @@ impl<'x> Distributor<'x> {
         let width = self.config.width;
         let frames = std::mem::take(&mut self.pending_frames);
         let tags = std::mem::take(&mut self.pending_tags);
-        if frames.is_empty() && tags.is_empty() {
+        if frames.is_empty() && tags.is_empty() && self.pending_placed.is_empty() {
             return Ok(());
         }
 
@@ -341,6 +372,43 @@ impl<'x> Distributor<'x> {
         for (tag, y) in tags {
             result.push_tag(TermPoint::new(TermScalar::ZERO, y), tag);
         }
+
+        // Stamp absolutely placed frames onto the result.
+        // Mirrors paged's finalize() Item::Placed branch:
+        //   x = align_x.position(size.x - frame.width())
+        //   y = align_y ? align.position(size.y - frame.height()) : flow_y
+        //   pos = (x, y) + delta
+        let rw = effective_width;
+        // Use the actual result frame height (shrink-wrap) as the reference for
+        // placed-item alignment, not the full region height.  In paged layout
+        // the result frame always equals the region height, but in terminal
+        // layout frames are shrink-wrapped, so `bottom` alignment should mean
+        // "bottom of the result frame" (i.e. below the last flow item).
+        let rh = result.rows();
+        for entry in std::mem::take(&mut self.pending_placed) {
+            let fw = entry.frame.cols();
+            let fh = entry.frame.rows();
+
+            let x = match entry.align_x {
+                None | Some(FixedAlignment::Start) => TermScalar::ZERO,
+                Some(FixedAlignment::Center) => {
+                    (rw - fw).max(TermScalar::ZERO) / TermScalar::new(2)
+                }
+                Some(FixedAlignment::End) => (rw - fw).max(TermScalar::ZERO),
+            };
+            let y = match entry.align_y {
+                Some(FixedAlignment::Start) => TermScalar::ZERO,
+                Some(FixedAlignment::Center) => {
+                    (rh - fh).max(TermScalar::ZERO) / TermScalar::new(2)
+                }
+                Some(FixedAlignment::End) => (rh - fh).max(TermScalar::ZERO),
+                None => entry.flow_y,
+            };
+
+            let (dx, dy) = entry.delta;
+            result.push_frame(TermPoint::new(x + dx, y + dy), entry.frame);
+        }
+
         self.finished.push(result);
 
         Ok(())

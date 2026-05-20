@@ -9,10 +9,9 @@
 
 use typst::diag::SourceResult;
 use typst::engine::Engine;
-use typst::introspection::Location;
 
 use lynchpin_library::{
-    Row, TermConfig, TermFrame, TermFragment, TermRegion, TermRegions,
+    Row, TermFrame, TermFragment, TermRegion, TermRegions,
 };
 
 use super::collect::Child;
@@ -69,16 +68,16 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
         // Process floats from previous regions.
         let floats: Vec<_> = self.work.floats.drain(..).collect();
         for placed in floats {
-            if self.work.skips.contains(&placed.location()) {
-                continue;
+            let base = self.regions.size;
+            let frame = placed.layout(self.engine, base)?;
+            if !frame.size().is_empty() {
+                items.push(distribute::Item::Placed {
+                    frame,
+                    align_x: placed.align_x,
+                    align_y: placed.align_y,
+                    delta: placed.delta,
+                });
             }
-            let frame = placed.layout(self.engine, &TermConfig::default())?;
-            items.push(distribute::Item::Placed {
-                frame,
-                align_x: placed.align_x,
-                align_y: placed.align_y,
-                delta: placed.delta,
-            });
         }
         Ok(())
     }
@@ -138,13 +137,16 @@ impl<'a, 'b> Composer<'a, 'b, '_, '_> {
                     }
                 }
                 Child::Placed(placed) => {
-                    let frame = placed.layout(self.engine, &TermConfig::default())?;
-                    items.push(distribute::Item::Placed {
-                        frame,
-                        align_x: placed.align_x,
-                        align_y: placed.align_y,
-                        delta: placed.delta,
-                    });
+                    let base = region.size;
+                    let frame = placed.layout(self.engine, base)?;
+                    if !frame.size().is_empty() {
+                        items.push(distribute::Item::Placed {
+                            frame,
+                            align_x: placed.align_x,
+                            align_y: placed.align_y,
+                            delta: placed.delta,
+                        });
+                    }
                 }
                 Child::Flush => {
                     items.push(distribute::Item::Flush);
@@ -179,8 +181,6 @@ struct Insertions<'a, 'b> {
     bottom_size: Row,
     /// Available width for insertions.
     width: lynchpin_library::Col,
-    /// Locations to skip.
-    skips: Vec<Location>,
     _phantom: std::marker::PhantomData<(&'a (), &'b ())>,
 }
 

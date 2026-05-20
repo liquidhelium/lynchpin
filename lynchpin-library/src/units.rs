@@ -26,6 +26,31 @@ pub fn abs_to_rows(abs: Abs, font_size: Abs) -> Row {
     TermScalar::from_f64((abs / font_size).round().max(1.0))
 }
 
+/// Convert a `Rel<Abs>` delta offset to terminal columns.
+///
+/// The `rel` (ratio) part is evaluated against `base_cols` — the number of
+/// columns in the enclosing region.  The `abs` part is converted with the
+/// standard `abs_to_cols` formula.  This mirrors how paged layout evaluates
+/// `delta.zip_map(size, Rel::relative_to)` at finalize time, but uses integer
+/// terminal coordinates throughout.
+///
+/// Unlike `abs_to_cols`, a zero result is allowed (delta may legitimately be
+/// zero or even negative in principle; we clamp to zero for simplicity).
+pub fn rel_abs_to_cols(rel: typst::layout::Rel<Abs>, font_size: Abs, base_cols: Col) -> Col {
+    let abs_part = TermScalar::from_f64((rel.abs / font_size).round());
+    let rel_part = TermScalar::from_f64((rel.rel.get() * base_cols.get() as f64).round());
+    abs_part + rel_part
+}
+
+/// Convert a `Rel<Abs>` delta offset to terminal rows.
+///
+/// See `rel_abs_to_cols` for the conversion semantics.
+pub fn rel_abs_to_rows(rel: typst::layout::Rel<Abs>, font_size: Abs, base_rows: Row) -> Row {
+    let abs_part = TermScalar::from_f64((rel.abs / font_size).round());
+    let rel_part = TermScalar::from_f64((rel.rel.get() * base_rows.get() as f64).round());
+    abs_part + rel_part
+}
+
 /// Resolve a `Rel<Length>` to terminal columns.
 pub fn rel_to_cols(rel: &Rel<Length>, styles: StyleChain) -> Col {
     let font_size = styles.get(TextElem::size).0.resolve(styles);

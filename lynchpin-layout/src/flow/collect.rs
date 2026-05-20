@@ -11,7 +11,7 @@ use typst::diag::SourceResult;
 use typst::engine::Engine;
 use typst::foundations::{Packed, Resolve, StyleChain};
 use typst::introspection::{Locator, SplitLocator, Tag, TagElem};
-use typst_utils::hash128;
+
 use typst::layout::{
     Axes, FixedAlignment, Fr, PagebreakElem, PlaceElem, Spacing,
     VElem,
@@ -218,33 +218,48 @@ impl<'a> Collector<'a, '_, '_> {
     ) -> SourceResult<()> {
         use typst::foundations::Smart;
 
+        let locator = self.locator.next(&elem.span());
+        let font_size = styles.get(TextElem::size).0.resolve(styles);
+
         let (ax, ay) = match elem.alignment.get(styles) {
-            Smart::Custom(a) => {
-                let x = a.x().map(|x| x.resolve(styles));
-                let y = a.y().map(|y| y.resolve(styles));
-                (x, y)
-            }
+            Smart::Custom(a) => (
+                a.x().map(|x| x.resolve(styles)),
+                a.y().map(|y| y.resolve(styles)),
+            ),
             _ => (None, None),
         };
 
-        let float = elem.float.get(styles);
-        let clearance = {
-            let abs = elem.clearance.resolve(styles);
-            let font_size = styles.get(TextElem::size).0.resolve(styles);
-            lynchpin_library::units::abs_to_cols(abs, font_size)
-        };
+        // Convert dx/dy from Rel<Abs> to terminal grid units at collect time,
+        // evaluating the relative part against the base (page) region size.
+        // This mirrors paged's `delta.zip_map(size, Rel::relative_to)` which
+        // runs at finalize time; using the base region as `size` is a
+        // reasonable approximation for terminal layout.
+        let dx = lynchpin_library::units::rel_abs_to_cols(
+            elem.dx.get(styles).resolve(styles),
+            font_size,
+            self.base.cols,
+        );
+        let dy = lynchpin_library::units::rel_abs_to_rows(
+            elem.dy.get(styles).resolve(styles),
+            font_size,
+            self.base.rows,
+        );
+
+        let clearance = lynchpin_library::units::abs_to_cols(
+            elem.clearance.resolve(styles),
+            font_size,
+        );
 
         self.output.push(Child::Placed(PlacedChild {
             align_x: ax,
             align_y: ay,
             scope: elem.scope.get(styles),
-            float,
+            float: elem.float.get(styles),
             clearance,
-            delta: (TermScalar::ZERO, TermScalar::ZERO),
+            delta: (dx, dy),
             elem,
             styles,
-            location: self.locator.next_location(self.engine.introspector, hash128(&elem.span())),
-            alignment: elem.alignment.get(styles),
+            locator,
         }));
         Ok(())
     }
@@ -509,36 +524,54 @@ impl<'a, 'b> MultiSpill<'a, 'b> {
 
 // ── PlacedChild ──────────────────────────────────────────────────────────────
 
-#[derive(Clone)]
 pub struct PlacedChild<'a> {
     pub align_x: Option<FixedAlignment>,
     pub align_y: Option<FixedAlignment>,
     pub scope: typst::layout::PlacementScope,
     pub float: bool,
     pub clearance: TermScalar,
+    /// Pre-converted delta offsets in terminal grid units.
+    /// Computed at collect time from `dx`/`dy` relative to the base region.
     pub delta: (TermScalar, TermScalar),
     elem: &'a Packed<PlaceElem>,
     styles: StyleChain<'a>,
-    location: typst::introspection::Location,
-    alignment: typst::foundations::Smart<typst::layout::Alignment>,
+    /// Locator for the placed child's body layout (mirrors paged PlacedChild).
+    locator: typst::introspection::Locator<'a>,
+}
+
+impl Clone for PlacedChild<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            align_x: self.align_x,
+            align_y: self.align_y,
+            scope: self.scope,
+            float: self.float,
+            clearance: self.clearance,
+            delta: self.delta,
+            elem: self.elem,
+            styles: self.styles,
+            locator: self.locator.relayout(),
+        }
+    }
 }
 
 impl PlacedChild<'_> {
-    /// Layout the placed child into a frame.
+    /// Lay out the placed child's body into a frame.
+    ///
+    /// `base` is the enclosing region's size; the child is laid out with
+    /// `expand = false` on both axes (shrink-wrap), mirroring paged's
+    /// `Region::new(base, Axes::splat(false))`.
     pub fn layout(
         &self,
         engine: &mut Engine,
-        config: &TermConfig,
+        base: TermSize,
     ) -> SourceResult<TermFrame> {
-        // TODO: PlacedChild should store a TermBlockElem and dispatch through
-        // layout_single_block properly.
-        warn!("PlacedChild layout is not fully implemented; returning an empty frame");
-        let _ = (engine, config);
-        Ok(TermFrame::new(TermSize::ZERO))
-    }
-
-    /// The location of this placed child.
-    pub fn location(&self) -> typst::introspection::Location {
-        self.location
+        crate::flow::layout_term_frame(
+            engine,
+            &self.elem.body,
+            self.locator.relayout(),
+            self.styles,
+            TermRegion::new(base, typst::layout::Axes::splat(false)),
+        )
     }
 }
