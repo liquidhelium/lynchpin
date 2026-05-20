@@ -1,7 +1,7 @@
 
 pub mod compile_ng {
     use comemo::{Track, Tracked, TrackedMut};
-    use lynchpin_library_ng::TermDocument;
+    use lynchpin_library::TermDocument;
     use std::sync::LazyLock;
     use typst::{
         ROUTINES, World,
@@ -51,7 +51,7 @@ pub mod compile_ng {
 
     static NG_ROUTINES: LazyLock<Routines> = LazyLock::new(|| {
         let mut rules = NativeRuleMap::new();
-        lynchpin_layout_ng::rules::register(&mut rules);
+        lynchpin_layout::rules::register(&mut rules);
         Routines {
             rules,
             eval_string: ROUTINES.eval_string,
@@ -177,7 +177,7 @@ pub mod compile_ng {
             lynchpin_term_realize::TermRealizationKind::Document,
         )?;
 
-        lynchpin_layout_ng::pages::layout_term_document(
+        lynchpin_layout::pages::layout_term_document(
             &mut engine,
             &mut children,
             &mut locator,
@@ -191,7 +191,7 @@ pub mod compile_ng {
     ) -> Introspector {
         use typst::introspection::IntrospectorBuilder;
         use std::num::NonZeroUsize;
-        use lynchpin_library_ng::{TermFrameItem, TermPoint};
+        use lynchpin_library::{TermFrameItem, TermPoint};
         use typst::foundations::Resolve;
 
         let library = world.library();
@@ -209,7 +209,7 @@ pub mod compile_ng {
         fn discover_in_frame(
             builder: &mut IntrospectorBuilder,
             elems: &mut Vec<(typst::foundations::Content, typst::layout::Position)>,
-            frame: &lynchpin_library_ng::TermFrame,
+            frame: &lynchpin_library::TermFrame,
             page: NonZeroUsize,
             offset: TermPoint,
             col_to_pt: f64,

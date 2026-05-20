@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 lynchpin-term-realize = { path = "../lynchpin-term-realize" }
-lynchpin-layout-ng = { path = "../lynchpin-layout-ng" }
-lynchpin-library-ng = { path = "../lynchpin-library-ng" }
+lynchpin-layout = { path = "../lynchpin-layout" }
+lynchpin-library = { path = "../lynchpin-library" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 typst = { workspace = true }

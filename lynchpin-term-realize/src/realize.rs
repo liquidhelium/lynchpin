@@ -25,7 +25,7 @@ use typst::foundations::NativeShowRule;
 use typst::foundations::{ContextElem, TargetElem};
 use typst::introspection::{Locatable, SplitLocator, Tag, TagFlags, TagElem, Tagged};
 use typst::layout::{AlignElem, BoxElem, HElem, HideElem, InlineElem, VElem};
-use lynchpin_library_ng::TermInlineElem;
+use lynchpin_library::TermInlineElem;
 use typst::math::{EquationElem, Mathy};
 use typst::model::{
     DocumentInfo, EmphElem, EnumElem, ListElem, ListItemLike, ListLike, ParElem, ParbreakElem,

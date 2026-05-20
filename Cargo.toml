@@ -1,10 +1,10 @@
 [workspace]
 members = [
     "lynchpin",
+    "lynchpin-library",
     # "lynchpin-library",
-    "lynchpin-library-ng",
+    "lynchpin-layout",
     # "lynchpin-layout",
-    "lynchpin-layout-ng",
     # "lynchpin-term-layout",
     "lynchpin-term-realize",
 ]

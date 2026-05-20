@@ -1839,8 +1839,8 @@ dependencies = [
  "crossterm",
  "ecow",
  "fontdb",
- "lynchpin-layout-ng",
- "lynchpin-library-ng",
+ "lynchpin-layout",
+ "lynchpin-library",
  "lynchpin-term-realize",
  "rustc-hash",
  "tinymist-world",
@@ -1853,7 +1853,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lynchpin-layout-ng"
+name = "lynchpin-layout"
 version = "0.1.0"
 dependencies = [
  "az",
@@ -1869,7 +1869,7 @@ dependencies = [
  "icu_provider_blob",
  "icu_segmenter",
  "kurbo 0.12.0",
- "lynchpin-library-ng",
+ "lynchpin-library",
  "lynchpin-term-realize",
  "memchr",
  "rustc-hash",
@@ -1892,7 +1892,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lynchpin-library-ng"
+name = "lynchpin-library"
 version = "0.1.0"
 dependencies = [
  "comemo",
@@ -1911,7 +1911,7 @@ dependencies = [
  "arrayvec",
  "comemo",
  "ecow",
- "lynchpin-library-ng",
+ "lynchpin-library",
  "tracing",
  "typst",
 ]
