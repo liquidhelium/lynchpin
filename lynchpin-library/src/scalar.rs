@@ -89,12 +89,6 @@ impl TermScalar {
         }
     }
 
-    /// Get the raw `f64` value (for arithmetic delegation).
-    #[inline]
-    pub(crate) const fn raw(self) -> f64 {
-        self.0
-    }
-
     /// Round to the nearest integer, away from zero for half-way cases.
     #[inline]
     pub fn round(self) -> Self {
