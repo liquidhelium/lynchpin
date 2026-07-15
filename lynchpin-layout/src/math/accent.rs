@@ -125,9 +125,40 @@ fn display_accent_char(ctx: &TermMathContext, accent: Accent) -> char {
             '\u{20E1}' => '-',  // combining left-right arrow
             '\u{20D0}' => '<',  // combining left harpoon above
             '\u{20D1}' => '>',  // combining right harpoon above
-            _ => ch,
+            _ => combining_to_spacing(ch),
         }
     } else {
-        ch
+        // In Unicode mode, combining characters (width=0) are skipped by the
+        // terminal grid renderer.  Map them to their spacing equivalents so
+        // they actually appear in the accent row.
+        combining_to_spacing(ch)
+    }
+}
+
+/// Convert a combining accent codepoint to a spacing (width-1) equivalent.
+///
+/// Falls back to the original character for unrecognised codepoints.
+fn combining_to_spacing(ch: char) -> char {
+    match ch {
+        '\u{0300}' => '\u{0060}', // COMBINING GRAVE ACCENT → ` (GRAVE ACCENT)
+        '\u{0301}' => '\u{00B4}', // COMBINING ACUTE ACCENT → ´ (ACUTE ACCENT)
+        '\u{0302}' => '\u{02C6}', // COMBINING CIRCUMFLEX ACCENT → ˆ
+        '\u{0303}' => '\u{02DC}', // COMBINING TILDE → ˜
+        '\u{0304}' => '\u{02C9}', // COMBINING MACRON → ˉ
+        '\u{0305}' => '\u{00AF}', // COMBINING OVERLINE → ¯ (MACRON)
+        '\u{0306}' => '\u{02D8}', // COMBINING BREVE → ˘
+        '\u{0307}' => '\u{02D9}', // COMBINING DOT ABOVE → ˙
+        '\u{0308}' => '\u{00A8}', // COMBINING DIAERESIS → ¨
+        '\u{0309}' => '\u{02C0}', // COMBINING HOOK ABOVE → ˀ
+        '\u{030A}' => '\u{02DA}', // COMBINING RING ABOVE → ˚
+        '\u{030B}' => '\u{02DD}', // COMBINING DOUBLE ACUTE ACCENT → ˝
+        '\u{030C}' => '\u{02C7}', // COMBINING CARON → ˇ
+        '\u{0332}' | '\u{0333}' => '_', // COMBINING LOW LINE / DOUBLE LOW LINE
+        '\u{20D0}' => '\u{21BC}', // COMBINING LEFT HARPOON ABOVE → ↼
+        '\u{20D1}' => '\u{21C0}', // COMBINING RIGHT HARPOON ABOVE → ⇀
+        '\u{20D6}' => '\u{2190}', // COMBINING LEFT ARROW ABOVE → ←
+        '\u{20D7}' => '\u{2192}', // COMBINING RIGHT ARROW ABOVE → →
+        '\u{20E1}' => '\u{2194}', // COMBINING LEFT RIGHT ARROW ABOVE → ↔
+        _ => ch,
     }
 }
